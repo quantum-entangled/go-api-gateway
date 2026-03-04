@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-// This test demonstrates t.Setenv — it sets an env var for the duration
-// of the test only, and automatically restores the original value when
-// the test finishes. No cleanup needed.
 func TestLoad_AllSet(t *testing.T) {
 	t.Setenv("GATEWAY_PORT", "9090")
 	t.Setenv("UPSTREAM_A_URL", "http://localhost:8081")
