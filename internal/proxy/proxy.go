@@ -17,7 +17,12 @@ func NewProxy(target string, logger *slog.Logger) (http.Handler, error) {
 	}
 
 	rp := &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) { pr.SetURL(targetURL) },
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetXForwarded()
+			pr.Out.URL.Scheme = targetURL.Scheme
+			pr.Out.URL.Host = targetURL.Host
+			pr.Out.Host = targetURL.Host
+		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Error("proxy error", "error", err)
 			w.Header().Set("Content-Type", "application/json")
