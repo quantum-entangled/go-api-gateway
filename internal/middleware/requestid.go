@@ -7,12 +7,12 @@ import (
 	"net/http"
 )
 
-// ctxKey is an unexported type for context keys in this package.
+// requestIDKeyType is an unexported type for the context key.
 // Using a struct type (not a string) prevents collisions with keys
 // from other packages, even if they use the same name.
-type ctxKey struct{}
+type requestIDKeyType struct{}
 
-var requestIDKey ctxKey
+var requestIDKey requestIDKeyType
 
 func newContext(ctx context.Context, reqID string) context.Context {
 	return context.WithValue(ctx, requestIDKey, reqID)
