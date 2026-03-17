@@ -12,6 +12,7 @@ type responseWriter struct {
 	bytes  int
 }
 
+// WriteHeader captures the status code and delegates to the wrapped ResponseWriter.
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.status = code
 	rw.ResponseWriter.WriteHeader(code)
