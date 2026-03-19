@@ -27,11 +27,8 @@ func TestRequestID_SetsHeader(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	handler.ServeHTTP(rec, req)
 
-	// The response header should contain the request ID
 	headerID := rec.Header().Get("X-Request-ID")
 	require.NotEmpty(t, headerID, "X-Request-ID header must be set")
-
-	// The context value should match the header
 	assert.Equal(t, headerID, capturedID, "context ID must match header ID")
 }
 
@@ -51,13 +48,13 @@ func TestRequestID_UniquePerRequest(t *testing.T) {
 	handler.ServeHTTP(recSecond, reqSecond)
 	secondID := recSecond.Header().Get("X-Request-ID")
 
-	assert.NotEqual(t, firstID, secondID, "IDs from two different requests are identical")
+	assert.NotEqual(t, firstID, secondID)
 }
 
 func TestFromContext_Empty(t *testing.T) {
 	ctx := context.Background()
 	_, ok := middleware.FromContext(ctx)
-	assert.Falsef(t, ok, "request ID is present")
+	assert.False(t, ok)
 }
 
 func TestRequestID_UUIDFormat(t *testing.T) {
