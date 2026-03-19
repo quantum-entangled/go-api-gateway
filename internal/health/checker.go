@@ -18,7 +18,7 @@ type Checker struct {
 }
 
 // NewChecker creates a Checker for the given upstream URLs.
-// It does NOT start polling — call Start for that.
+// It does NOT start polling - call Start for that.
 func NewChecker(urls []string, interval time.Duration, path string) *Checker {
 	return &Checker{
 		urls:     urls,
