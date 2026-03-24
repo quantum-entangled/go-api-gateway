@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"go-api-gateway/internal/circuitbreaker"
 	"go-api-gateway/internal/config"
+	"go-api-gateway/internal/health"
+	"go-api-gateway/internal/loadbalancer"
 	"go-api-gateway/internal/proxy"
 )
 
@@ -22,17 +27,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	proxyA, err := proxy.NewProxy(cfg.UpstreamAURL, logger)
-	if err != nil {
-		slog.Error("failed to create proxy for upstream-a", "error", err)
-		os.Exit(1)
-	}
-
-	proxyB, err := proxy.NewProxy(cfg.UpstreamBURL, logger)
-	if err != nil {
-		slog.Error("failed to create proxy for upstream-b", "error", err)
-		os.Exit(1)
-	}
+	// Each service gets its own set of upstreams, health checker, LB, and breakers.
+	// For now each service has one instance; adding replicas is just a config change.
+	handlerA := buildServiceHandler([]string{cfg.UpstreamAURL}, logger)
+	handlerB := buildServiceHandler([]string{cfg.UpstreamBURL}, logger)
 
 	r := chi.NewRouter()
 
@@ -40,12 +38,8 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// chi.Mount sets rctx.RoutePath for chi sub-routers but does not modify
-	// r.URL.Path, so non-chi handlers like ReverseProxy still see the full
-	// path. http.StripPrefix strips the mount prefix from r.URL.Path before
-	// the proxy sees it.
-	r.Mount("/service-a", http.StripPrefix("/service-a", proxyA))
-	r.Mount("/service-b", http.StripPrefix("/service-b", proxyB))
+	r.Mount("/service-a", http.StripPrefix("/service-a", handlerA))
+	r.Mount("/service-b", http.StripPrefix("/service-b", handlerB))
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	slog.Info("gateway started", "addr", addr)
@@ -53,4 +47,20 @@ func main() {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+// buildServiceHandler creates a proxy.Handler for a set of upstream instances
+// of the same service, with health checking, load balancing, and circuit breakers.
+func buildServiceHandler(upstreams []string, logger *slog.Logger) http.Handler {
+	checker := health.NewChecker(upstreams, 5*time.Second, "/healthz")
+	checker.Start(context.Background())
+
+	lb := loadbalancer.NewRoundRobin(upstreams, checker)
+
+	breakers := make(map[string]*circuitbreaker.Breaker, len(upstreams))
+	for _, u := range upstreams {
+		breakers[u] = circuitbreaker.NewBreaker(3, 10*time.Second)
+	}
+
+	return proxy.NewHandler(lb, breakers, logger)
 }
