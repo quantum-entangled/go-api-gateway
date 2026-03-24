@@ -29,7 +29,6 @@ func NewChecker(urls []string, interval time.Duration, path string) *Checker {
 }
 
 // Start begins periodic health checking in a background goroutine.
-// It polls all upstreams concurrently on each tick.
 // Stops when the context is cancelled.
 func (c *Checker) Start(ctx context.Context) {
 	c.checkAll()
@@ -49,7 +48,6 @@ func (c *Checker) Start(ctx context.Context) {
 	}()
 }
 
-// checkAll pings every upstream concurrently and updates their health status.
 func (c *Checker) checkAll() {
 	var wg sync.WaitGroup
 	for _, url := range c.urls {
@@ -60,7 +58,6 @@ func (c *Checker) checkAll() {
 	wg.Wait()
 }
 
-// check pings a single upstream and updates its health status.
 func (c *Checker) check(url string) {
 	res, err := c.client.Get(url + c.path)
 	if err != nil {
