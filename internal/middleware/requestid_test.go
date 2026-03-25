@@ -18,7 +18,7 @@ func TestRequestID_SetsHeader(t *testing.T) {
 	var capturedOK bool
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedID, capturedOK = middleware.FromContext(r.Context())
-		require.Truef(t, capturedOK, "context ID is not set")
+		require.True(t, capturedOK, "context ID is not set")
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -72,5 +72,5 @@ func TestRequestID_UUIDFormat(t *testing.T) {
 		t.Fatalf("regexp.MatchString() error: %v", err)
 	}
 
-	assert.Truef(t, match, "UUID is not formatted correctly (v4)")
+	assert.True(t, match, "UUID is not formatted correctly (v4)")
 }

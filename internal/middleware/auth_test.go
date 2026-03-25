@@ -81,7 +81,7 @@ func TestJWTAuth_ValidToken(t *testing.T) {
 
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := middleware.ClaimsFromContext(r.Context())
-		require.True(t, ok)
+		require.True(t, ok, "claims not found")
 		assert.Equal(t, "user1", claims.Subject)
 		assert.True(t, slices.Contains(claims.Roles, "admin"))
 		w.WriteHeader(http.StatusOK)
