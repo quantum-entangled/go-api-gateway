@@ -20,8 +20,10 @@ import (
 	"go-api-gateway/internal/middleware"
 	gatewayotel "go-api-gateway/internal/otel"
 	"go-api-gateway/internal/proxy"
+	"go-api-gateway/internal/ratelimit"
 
 	"go.opentelemetry.io/otel"
+	"golang.org/x/time/rate"
 )
 
 func main() {
@@ -62,6 +64,10 @@ func main() {
 
 	r := chi.NewRouter()
 
+	// Global middleware
+	r.Use(middleware.RequestID)
+	r.Use(middleware.Logger(logger))
+
 	// Observability middleware (active regardless of OTel endpoint -
 	// when no real provider is registered, the OTel API calls are no-ops)
 	m, err := metrics.NewMetrics(
@@ -82,8 +88,13 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	r.Mount("/service-a", http.StripPrefix("/service-a", handlerA))
-	r.Mount("/service-b", http.StripPrefix("/service-b", handlerB))
+	// Rate-limited service routes
+	limiter := ratelimit.NewMemoryLimiter(ctx, rate.Limit(10), 20, time.Minute, 3*time.Minute)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RateLimit(limiter, middleware.KeyByIP))
+		r.Mount("/service-a", http.StripPrefix("/service-a", handlerA))
+		r.Mount("/service-b", http.StripPrefix("/service-b", handlerB))
+	})
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	srv := &http.Server{Addr: addr, Handler: r}
