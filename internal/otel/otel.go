@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
@@ -94,11 +95,17 @@ func Setup(ctx context.Context, endpoint string) (*SDK, error) {
 	otel.SetMeterProvider(mp)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
-	return &SDK{
+	sdk := &SDK{
 		TracerProvider: tp,
 		MeterProvider:  mp,
 		LoggerProvider: lp,
-	}, nil
+	}
+
+	if err := runtime.Start(runtime.WithMeterProvider(mp)); err != nil {
+		return nil, errors.Join(err, sdk.Shutdown(ctx))
+	}
+
+	return sdk, nil
 }
 
 // Shutdown flushes and shuts down all providers.
