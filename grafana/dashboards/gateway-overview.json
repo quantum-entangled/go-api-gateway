@@ -65,6 +65,7 @@
         },
         "overrides": []
       },
+      "options": { "colorMode": "value" },
       "targets": [
         {
           "expr": "sum(gateway_requests_total{http_path!=\"/healthz\"})",
@@ -120,20 +121,66 @@
       ]
     },
     {
-      "title": "Recent Logs",
-      "type": "logs",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "title": "Goroutines",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "{service_name=\"go-api-gateway\"}"
+          "expr": "go_goroutine_count{job=\"go-api-gateway\"}",
+          "legendFormat": "goroutines"
+        }
+      ]
+    },
+    {
+      "title": "Memory Used",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "go_memory_used_bytes{job=\"go-api-gateway\"}",
+          "legendFormat": "{{go_memory_type}}"
+        }
+      ]
+    },
+    {
+      "title": "Recent Logs",
+      "type": "logs",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "displayedFields": ["___LOG_LINE_BODY___", "method", "path", "status", "duration_ms", "request_id"]
+      },
+      "targets": [
+        {
+          "expr": "{service_name=\"go-api-gateway\"} | path != `/healthz`"
         }
       ]
     },
     {
       "title": "Recent Traces",
       "type": "table",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
       "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
