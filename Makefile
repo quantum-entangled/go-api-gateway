@@ -1,7 +1,7 @@
 .PHONY: run build test coverage lint clean infra-up infra-down migrate-up migrate-down bench
 
 run:
-	go run ./cmd/gateway
+	go run ./cmd/gateway; true
 
 build:
 	go build -o bin/gateway ./cmd/gateway
