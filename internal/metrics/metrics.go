@@ -32,6 +32,9 @@ func NewMetrics(meter metric.Meter) (*Metrics, error) {
 		"gateway.request.duration",
 		metric.WithDescription("HTTP request duration in seconds."),
 		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(
+			0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10,
+		),
 	)
 	if err != nil {
 		return nil, err
@@ -55,10 +58,10 @@ func (m *Metrics) Middleware() func(http.Handler) http.Handler {
 			path := attribute.String("http.path", r.URL.Path)
 			status := attribute.String("http.status", strconv.Itoa(rw.status))
 
-			m.requestDuration.Record(r.Context(), duration,
-				metric.WithAttributeSet(attribute.NewSet(method, path)))
-			m.requestsTotal.Add(r.Context(), 1,
-				metric.WithAttributeSet(attribute.NewSet(method, path, status)))
+			durationAttrs := attribute.NewSet(method, path)
+			counterAttrs := attribute.NewSet(method, path, status)
+			m.requestDuration.Record(r.Context(), duration, metric.WithAttributeSet(durationAttrs))
+			m.requestsTotal.Add(r.Context(), 1, metric.WithAttributeSet(counterAttrs))
 		})
 	}
 }

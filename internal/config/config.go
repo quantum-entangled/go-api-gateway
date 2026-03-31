@@ -18,6 +18,7 @@ type Config struct {
 	Port         int    // GATEWAY_PORT (default: 8080)
 	UpstreamAURL string // UPSTREAM_A_URL (required)
 	UpstreamBURL string // UPSTREAM_B_URL (required)
+	OTelEndpoint string // OTEL_EXPORTER_OTLP_ENDPOINT (optional, OTel disabled when empty)
 }
 
 // Load reads configuration from environment variables.
@@ -35,6 +36,7 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("config validation failed: %w", ErrNotIntGatewayPort)
 		}
 	}
+
 	upstreamAURL := os.Getenv("UPSTREAM_A_URL")
 	upstreamBURL := os.Getenv("UPSTREAM_B_URL")
 	switch {
@@ -44,5 +46,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("config validation failed: %w", ErrEmptyUpstreamBURL)
 	}
 
-	return &Config{gatewayPort, upstreamAURL, upstreamBURL}, nil
+	otelEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+
+	return &Config{
+		Port:         gatewayPort,
+		UpstreamAURL: upstreamAURL,
+		UpstreamBURL: upstreamBURL,
+		OTelEndpoint: otelEndpoint,
+	}, nil
 }

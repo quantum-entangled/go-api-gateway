@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -14,7 +16,12 @@ import (
 	"go-api-gateway/internal/config"
 	"go-api-gateway/internal/health"
 	"go-api-gateway/internal/loadbalancer"
+	"go-api-gateway/internal/metrics"
+	"go-api-gateway/internal/middleware"
+	gatewayotel "go-api-gateway/internal/otel"
 	"go-api-gateway/internal/proxy"
+
+	"go.opentelemetry.io/otel"
 )
 
 func main() {
@@ -27,12 +34,49 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Each service gets its own set of upstreams, health checker, LB, and breakers.
-	// For now each service has one instance; adding replicas is just a config change.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// OTel setup (optional - disabled when endpoint is empty)
+	if cfg.OTelEndpoint != "" {
+		sdk, err := gatewayotel.Setup(ctx, cfg.OTelEndpoint)
+		if err != nil {
+			slog.Error("failed to setup OTel", "error", err)
+			os.Exit(1)
+		}
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := sdk.Shutdown(shutdownCtx); err != nil {
+				slog.Error("OTel shutdown", "error", err)
+			}
+		}()
+
+		logger = sdk.NewLogger(os.Stdout)
+		slog.SetDefault(logger)
+		slog.Info("OTel enabled", "endpoint", cfg.OTelEndpoint)
+	}
+
 	handlerA := buildServiceHandler([]string{cfg.UpstreamAURL}, logger)
 	handlerB := buildServiceHandler([]string{cfg.UpstreamBURL}, logger)
 
 	r := chi.NewRouter()
+
+	// Observability middleware (active regardless of OTel endpoint -
+	// when no real provider is registered, the OTel API calls are no-ops)
+	m, err := metrics.NewMetrics(
+		otel.GetMeterProvider().Meter("go-api-gateway"),
+	)
+	if err != nil {
+		slog.Error("failed to create metrics", "error", err)
+		os.Exit(1)
+	}
+
+	r.Use(m.Middleware())
+	r.Use(middleware.Tracing(
+		otel.GetTracerProvider().Tracer("go-api-gateway"),
+		otel.GetTextMapPropagator(),
+	))
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -42,10 +86,23 @@ func main() {
 	r.Mount("/service-b", http.StripPrefix("/service-b", handlerB))
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
-	slog.Info("gateway started", "addr", addr)
-	if err := http.ListenAndServe(addr, r); err != nil {
-		slog.Error("server failed", "error", err)
-		os.Exit(1)
+	srv := &http.Server{Addr: addr, Handler: r}
+
+	go func() {
+		slog.Info("gateway started", "addr", addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	<-ctx.Done()
+	slog.Info("shutting down")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("server shutdown", "error", err)
 	}
 }
 
