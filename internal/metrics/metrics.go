@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -55,7 +56,8 @@ func (m *Metrics) Middleware() func(http.Handler) http.Handler {
 			duration := time.Since(start).Seconds()
 
 			method := attribute.String("http.method", r.Method)
-			path := attribute.String("http.path", r.URL.Path)
+			routePattern := chi.RouteContext(r.Context()).RoutePattern()
+			path := attribute.String("http.path", routePattern)
 			status := attribute.String("http.status", strconv.Itoa(rw.status))
 
 			durationAttrs := attribute.NewSet(method, path)

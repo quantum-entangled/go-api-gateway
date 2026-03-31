@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -66,13 +67,15 @@ func assertAttr(t *testing.T, attrs attribute.Set, key, expected string) {
 func TestMiddlewareRecordsRequestsTotal(t *testing.T) {
 	m, reader := newTestMetrics(t)
 
-	handler := m.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	r := chi.NewRouter()
+	r.Use(m.Middleware())
+	r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}))
+	})
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	r.ServeHTTP(rec, req)
 
 	rm := collect(t, reader)
 	got := findMetric(t, rm, "gateway.requests.total")
@@ -92,22 +95,24 @@ func TestMiddlewareRecordsRequestsTotal(t *testing.T) {
 func TestMiddlewareRecordsDuration(t *testing.T) {
 	m, reader := newTestMetrics(t)
 
-	handler := m.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	r := chi.NewRouter()
+	r.Use(m.Middleware())
+	r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}))
+	})
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	r.ServeHTTP(rec, req)
 
 	rm := collect(t, reader)
 	got := findMetric(t, rm, "gateway.request.duration")
 
-	sum, ok := got.Data.(metricdata.Histogram[float64])
+	hist, ok := got.Data.(metricdata.Histogram[float64])
 	require.True(t, ok, "expected Histogram[float64] data type")
-	require.Len(t, sum.DataPoints, 1)
+	require.Len(t, hist.DataPoints, 1)
 
-	dp := sum.DataPoints[0]
+	dp := hist.DataPoints[0]
 	assert.Equal(t, uint64(1), dp.Count)
 
 	assertAttr(t, dp.Attributes, "http.method", "GET")
@@ -117,13 +122,15 @@ func TestMiddlewareRecordsDuration(t *testing.T) {
 func TestMiddlewareDefaultsTo200WithoutWriteHeader(t *testing.T) {
 	m, reader := newTestMetrics(t)
 
-	handler := m.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	r := chi.NewRouter()
+	r.Use(m.Middleware())
+	r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
-	}))
+	})
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	r.ServeHTTP(rec, req)
 
 	rm := collect(t, reader)
 	got := findMetric(t, rm, "gateway.requests.total")
@@ -137,13 +144,15 @@ func TestMiddlewareDefaultsTo200WithoutWriteHeader(t *testing.T) {
 func TestMiddlewareRecords5xxStatus(t *testing.T) {
 	m, reader := newTestMetrics(t)
 
-	handler := m.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	r := chi.NewRouter()
+	r.Use(m.Middleware())
+	r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
-	}))
+	})
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	r.ServeHTTP(rec, req)
 
 	rm := collect(t, reader)
 	got := findMetric(t, rm, "gateway.requests.total")
