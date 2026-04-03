@@ -76,23 +76,14 @@ services:
       retries: 10
 
   gateway:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM golang:1.25-alpine
-        WORKDIR /app
-        COPY go.mod go.sum ./
-        RUN go mod download
-        COPY . .
-        RUN go build -o /gateway ./cmd/gateway
-        CMD ["/gateway"]
+    build: .
     ports:
       - "${GATEWAY_PORT}:${GATEWAY_PORT}"
+    volumes:
+      - ./gateway.yaml:/etc/gateway/gateway.yaml:ro
     environment:
-      GATEWAY_PORT: ${GATEWAY_PORT}
-      UPSTREAM_A_URL: ${UPSTREAM_A_URL}
-      UPSTREAM_B_URL: ${UPSTREAM_B_URL}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+    command: ["-config", "/etc/gateway/gateway.yaml"]
     depends_on:
       service-a:
         condition: service_healthy

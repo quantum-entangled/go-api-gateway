@@ -1,0 +1,30 @@
+port: 8080
+
+rate_limit:
+  enabled: true
+  rate: 10
+  burst: 20
+  cleanup_interval: 1m
+  cleanup_max_idle: 3m
+
+health_check:
+  interval: 5s
+  path: /healthz
+
+circuit_breaker:
+  enabled: true
+  max_failures: 3
+  timeout: 10s
+
+services:
+  - name: service-a
+    prefix: /service-a
+    upstreams:
+      - http://service-a:8080
+    auth: false
+
+  - name: service-b
+    prefix: /service-b
+    upstreams:
+      - http://service-b:8080
+    auth: false

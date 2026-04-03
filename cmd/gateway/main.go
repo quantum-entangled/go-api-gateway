@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -27,10 +29,13 @@ import (
 )
 
 func main() {
+	configPath := flag.String("config", "gateway.yaml", "path to gateway config file")
+	flag.Parse()
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	cfg, err := config.Load()
+	cfg, err := config.Load(*configPath)
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
@@ -59,9 +64,6 @@ func main() {
 		slog.Info("OTel enabled", "endpoint", cfg.OTelEndpoint)
 	}
 
-	handlerA := buildServiceHandler([]string{cfg.UpstreamAURL}, logger)
-	handlerB := buildServiceHandler([]string{cfg.UpstreamBURL}, logger)
-
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -70,14 +72,11 @@ func main() {
 
 	// Observability middleware (active regardless of OTel endpoint -
 	// when no real provider is registered, the OTel API calls are no-ops)
-	m, err := metrics.NewMetrics(
-		otel.GetMeterProvider().Meter("go-api-gateway"),
-	)
+	m, err := metrics.NewMetrics(otel.GetMeterProvider().Meter("go-api-gateway"))
 	if err != nil {
 		slog.Error("failed to create metrics", "error", err)
 		os.Exit(1)
 	}
-
 	r.Use(m.Middleware())
 	r.Use(middleware.Tracing(
 		otel.GetTracerProvider().Tracer("go-api-gateway"),
@@ -88,12 +87,29 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Rate-limited service routes
-	limiter := ratelimit.NewMemoryLimiter(ctx, rate.Limit(10), 20, time.Minute, 3*time.Minute)
+	// Service routes
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.RateLimit(limiter, middleware.KeyByIP))
-		r.Mount("/service-a", http.StripPrefix("/service-a", handlerA))
-		r.Mount("/service-b", http.StripPrefix("/service-b", handlerB))
+		if cfg.RateLimit.Enabled {
+			limiter := ratelimit.NewMemoryLimiter(
+				ctx,
+				rate.Limit(cfg.RateLimit.Rate),
+				cfg.RateLimit.Burst,
+				cfg.RateLimit.CleanupInterval,
+				cfg.RateLimit.CleanupMaxIdle,
+			)
+			r.Use(middleware.RateLimit(limiter, middleware.KeyByIP))
+		}
+
+		for _, svc := range cfg.Services {
+			handler := buildServiceHandler(svc, cfg, ctx, logger)
+			r.Mount(svc.Prefix, http.StripPrefix(svc.Prefix, handler))
+			slog.Info(
+				"registered service",
+				"name", svc.Name,
+				"prefix", svc.Prefix,
+				"upstreams", svc.Upstreams,
+			)
+		}
 	})
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
@@ -117,17 +133,28 @@ func main() {
 	}
 }
 
-// buildServiceHandler creates a proxy.Handler for a set of upstream instances
-// of the same service, with health checking, load balancing, and circuit breakers.
-func buildServiceHandler(upstreams []string, logger *slog.Logger) http.Handler {
-	checker := health.NewChecker(upstreams, 5*time.Second, "/healthz")
-	checker.Start(context.Background())
+func buildServiceHandler(
+	svc config.ServiceConfig,
+	cfg *config.GatewayConfig,
+	ctx context.Context,
+	logger *slog.Logger,
+) http.Handler {
+	checker := health.NewChecker(svc.Upstreams, cfg.HealthCheck.Interval, cfg.HealthCheck.Path)
+	checker.Start(ctx)
 
-	lb := loadbalancer.NewRoundRobin(upstreams, checker)
+	lb := loadbalancer.NewRoundRobin(svc.Upstreams, checker)
 
-	breakers := make(map[string]*circuitbreaker.Breaker, len(upstreams))
-	for _, u := range upstreams {
-		breakers[u] = circuitbreaker.NewBreaker(3, 10*time.Second)
+	breakers := make(map[string]*circuitbreaker.Breaker, len(svc.Upstreams))
+	for _, u := range svc.Upstreams {
+		if cfg.CircuitBreaker.Enabled {
+			breakers[u] = circuitbreaker.NewBreaker(
+				cfg.CircuitBreaker.MaxFailures,
+				cfg.CircuitBreaker.Timeout,
+			)
+		} else {
+			// No-op: threshold unreachable, so the breaker never trips
+			breakers[u] = circuitbreaker.NewBreaker(math.MaxInt, time.Hour)
+		}
 	}
 
 	return proxy.NewHandler(lb, breakers, logger)

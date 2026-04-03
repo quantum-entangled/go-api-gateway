@@ -1,63 +1,232 @@
 package config
 
 import (
-	"errors"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestLoad_AllSet(t *testing.T) {
-	t.Setenv("GATEWAY_PORT", "9090")
-	t.Setenv("UPSTREAM_A_URL", "http://localhost:8081")
-	t.Setenv("UPSTREAM_B_URL", "http://localhost:8082")
+func writeConfig(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "gateway.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	return path
+}
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.Port != 9090 {
-		t.Errorf("Port = %d, want 9090", cfg.Port)
-	}
-	if cfg.UpstreamAURL != "http://localhost:8081" {
-		t.Errorf("UpstreamAURL = %q, want %q", cfg.UpstreamAURL, "http://localhost:8081")
-	}
-	if cfg.UpstreamBURL != "http://localhost:8082" {
-		t.Errorf("UpstreamBURL = %q, want %q", cfg.UpstreamBURL, "http://localhost:8082")
-	}
+const validConfig = `
+port: 9090
+
+rate_limit:
+  enabled: true
+  rate: 10
+  burst: 20
+  cleanup_interval: 1m
+  cleanup_max_idle: 3m
+
+health_check:
+  interval: 5s
+  path: /healthz
+
+circuit_breaker:
+  enabled: true
+  max_failures: 3
+  timeout: 10s
+
+services:
+  - name: catalog
+    prefix: /catalog
+    upstreams:
+      - http://localhost:8081
+      - http://localhost:8082
+    auth: false
+
+  - name: orders
+    prefix: /orders
+    upstreams:
+      - http://localhost:8083
+    auth: true
+`
+
+const minimalServiceConfig = `
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+`
+
+func TestLoad(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "otel:4318")
+	t.Setenv("JWT_PUBLIC_KEY_PATH", "/keys/dev.pem")
+
+	cfg, err := Load(writeConfig(t, validConfig))
+	require.NoError(t, err)
+
+	assert.Equal(t, 9090, cfg.Port)
+	assert.Equal(t, "otel:4318", cfg.OTelEndpoint)
+	assert.Equal(t, "/keys/dev.pem", cfg.JWTPublicKey)
+
+	assert.True(t, cfg.RateLimit.Enabled)
+	assert.Equal(t, 10.0, cfg.RateLimit.Rate)
+	assert.Equal(t, 20, cfg.RateLimit.Burst)
+
+	assert.True(t, cfg.CircuitBreaker.Enabled)
+	assert.Equal(t, 3, cfg.CircuitBreaker.MaxFailures)
+
+	require.Len(t, cfg.Services, 2)
+	assert.Equal(t, "catalog", cfg.Services[0].Name)
+	assert.Equal(t, "/catalog", cfg.Services[0].Prefix)
+	assert.Equal(t, []string{"http://localhost:8081", "http://localhost:8082"}, cfg.Services[0].Upstreams)
+	assert.False(t, cfg.Services[0].Auth)
+
+	assert.Equal(t, "orders", cfg.Services[1].Name)
+	assert.True(t, cfg.Services[1].Auth)
 }
 
 func TestLoad_DefaultPort(t *testing.T) {
-	t.Setenv("UPSTREAM_A_URL", "http://localhost:8081")
-	t.Setenv("UPSTREAM_B_URL", "http://localhost:8082")
+	cfg, err := Load(writeConfig(t, minimalServiceConfig))
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.Port != 8080 {
-		t.Fatalf("port = %d, want = 8080", cfg.Port)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 8080, cfg.Port)
 }
 
-func TestLoad_MissingRequired(t *testing.T) {
-	_, err := Load()
-	if !errors.Is(err, ErrEmptyUpstreamAURL) {
-		t.Errorf("expected ErrEmptyUpstreamAURL, got %v", err)
-	}
+func TestLoad_DefaultHealthCheck(t *testing.T) {
+	cfg, err := Load(writeConfig(t, minimalServiceConfig))
 
-	t.Setenv("UPSTREAM_A_URL", "https://localhost:8081")
-	_, err = Load()
-	if !errors.Is(err, ErrEmptyUpstreamBURL) {
-		t.Errorf("expected ErrEmptyUpstreamBURL, got %v", err)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "/healthz", cfg.HealthCheck.Path)
+	assert.Positive(t, cfg.HealthCheck.Interval)
 }
 
-func TestLoad_InvalidPort(t *testing.T) {
-	t.Setenv("GATEWAY_PORT", "abc")
-	t.Setenv("UPSTREAM_A_URL", "http://localhost:8081")
-	t.Setenv("UPSTREAM_B_URL", "http://localhost:8082")
+func TestLoad_FileNotFound(t *testing.T) {
+	_, err := Load("/nonexistent/gateway.yaml")
 
-	_, err := Load()
-	if !errors.Is(err, ErrNotIntGatewayPort) {
-		t.Errorf("expected ErrNotIntGatewayPort, but got %v", err)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reading config file")
+}
+
+func TestLoad_InvalidYAML(t *testing.T) {
+	_, err := Load(writeConfig(t, "{{invalid"))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parsing config file")
+}
+
+func TestLoad_NoServices(t *testing.T) {
+	_, err := Load(writeConfig(t, `port: 8080`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one service is required")
+}
+
+func TestLoad_ServiceMissingName(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+services:
+  - prefix: /svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "name is required")
+}
+
+func TestLoad_ServiceMissingPrefix(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+services:
+  - name: svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "prefix is required")
+}
+
+func TestLoad_ServiceNoUpstreams(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+services:
+  - name: svc
+    prefix: /svc
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one upstream is required")
+}
+
+func TestLoad_DuplicatePrefix(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+services:
+  - name: svc-a
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+  - name: svc-b
+    prefix: /svc
+    upstreams: [http://localhost:8082]
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate prefix")
+}
+
+func TestLoad_RateLimitInvalid(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+rate_limit:
+  enabled: true
+  rate: 0
+  burst: 10
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "rate_limit.rate must be positive")
+}
+
+func TestLoad_CircuitBreakerInvalid(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+circuit_breaker:
+  enabled: true
+  max_failures: 0
+  timeout: 10s
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "circuit_breaker.max_failures must be positive")
+}
+
+func TestLoad_DisabledRateLimitSkipsValidation(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+rate_limit:
+  enabled: false
+  rate: 0
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.NoError(t, err)
+	assert.False(t, cfg.RateLimit.Enabled)
+}
+
+func TestLoad_DisabledCircuitBreakerSkipsValidation(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+circuit_breaker:
+  enabled: false
+  max_failures: 0
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.NoError(t, err)
+	assert.False(t, cfg.CircuitBreaker.Enabled)
 }
