@@ -91,7 +91,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(gateway_requests_total{http_status=~\"5..\"}[1m])) / sum(rate(gateway_requests_total{http_path!=\"/healthz\"}[1m]))",
+          "expr": "sum(rate(gateway_requests_total{http_status=~\"5..\",http_path!=\"/healthz\"}[1m])) / (sum(rate(gateway_requests_total{http_path!=\"/healthz\"}[1m])) > 0)",
           "legendFormat": "error rate"
         }
       ]
