@@ -21,38 +21,76 @@ services:
       timeout: 3s
       retries: 5
 
-  service-a:
+  migrate:
     build:
       context: .
       dockerfile_inline: |
-        FROM golang:1.25-alpine
+        FROM golang:1.25-alpine AS build
+        RUN go install github.com/pressly/goose/v3/cmd/goose@latest
+        FROM alpine:3.23
+        COPY --from=build /go/bin/goose /usr/local/bin/goose
+        WORKDIR /migrations
+        COPY upstream/catalog/migrations/ ./catalog/
+        COPY upstream/orders/migrations/ ./orders/
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    command: >
+      sh -c "goose -dir /migrations/catalog -table goose_catalog postgres \"$$DATABASE_URL\" up &&
+             goose -dir /migrations/orders  -table goose_orders  postgres \"$$DATABASE_URL\" up"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  catalog:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM golang:1.25-alpine AS build
         WORKDIR /app
-        COPY go.mod ./
-        COPY upstream/service-a/ ./upstream/service-a/
-        RUN go build -o /server ./upstream/service-a
+        COPY go.mod go.sum ./
+        RUN go mod download
+        COPY upstream/catalog/ ./upstream/catalog/
+        RUN go build -o /server ./upstream/catalog
+        FROM alpine:3.23
+        COPY --from=build /server /server
         CMD ["/server"]
     environment:
-      PORT: ${UPSTREAM_A_PORT}
+      PORT: ${CATALOG_PORT}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: [ "CMD-SHELL", "wget -qO- http://localhost:${UPSTREAM_A_PORT}/healthz || exit 1" ]
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:${CATALOG_PORT}/healthz || exit 1" ]
       interval: 2s
       timeout: 3s
       retries: 5
 
-  service-b:
+  orders:
     build:
       context: .
       dockerfile_inline: |
-        FROM golang:1.25-alpine
+        FROM golang:1.25-alpine AS build
         WORKDIR /app
-        COPY go.mod ./
-        COPY upstream/service-b/ ./upstream/service-b/
-        RUN go build -o /server ./upstream/service-b
+        COPY go.mod go.sum ./
+        RUN go mod download
+        COPY upstream/orders/ ./upstream/orders/
+        RUN go build -o /server ./upstream/orders
+        FROM alpine:3.23
+        COPY --from=build /server /server
         CMD ["/server"]
     environment:
-      PORT: ${UPSTREAM_B_PORT}
+      PORT: ${ORDERS_PORT}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: [ "CMD-SHELL", "wget -qO- http://localhost:${UPSTREAM_B_PORT}/healthz || exit 1" ]
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:${ORDERS_PORT}/healthz || exit 1" ]
       interval: 2s
       timeout: 3s
       retries: 5
@@ -81,13 +119,15 @@ services:
       - "${GATEWAY_PORT}:${GATEWAY_PORT}"
     volumes:
       - ./gateway.yaml:/etc/gateway/gateway.yaml:ro
+      - ./dev.pem:/etc/gateway/dev.pem:ro
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
-    command: ["-config", "/etc/gateway/gateway.yaml"]
+      JWT_PUBLIC_KEY_PATH: /etc/gateway/dev.pem
+    command: [ "-config", "/etc/gateway/gateway.yaml" ]
     depends_on:
-      service-a:
+      catalog:
         condition: service_healthy
-      service-b:
+      orders:
         condition: service_healthy
       otel-lgtm:
         condition: service_healthy

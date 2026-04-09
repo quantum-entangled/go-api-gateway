@@ -17,14 +17,14 @@ circuit_breaker:
   timeout: 10s
 
 services:
-  - name: service-a
-    prefix: /service-a
+  - name: catalog
+    prefix: /catalog
     upstreams:
-      - http://service-a:8080
+      - http://catalog:8080
     auth: false
 
-  - name: service-b
-    prefix: /service-b
+  - name: orders
+    prefix: /orders
     upstreams:
-      - http://service-b:8080
-    auth: false
+      - http://orders:8080
+    auth: true
