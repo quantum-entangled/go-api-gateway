@@ -64,6 +64,7 @@ func NewHandler(lb LoadBalancer, breakers map[string]*circuitbreaker.Breaker, lo
 
 			pr.SetXForwarded()
 			injectTraceContext(pr)
+			injectUserHeaders(pr)
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			target := mustGetTargetFromContext(resp.Request.Context())
