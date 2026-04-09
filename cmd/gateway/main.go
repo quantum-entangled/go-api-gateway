@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -87,6 +90,17 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	// Load RSA public key for JWT validation (optional - required when any service has auth: true)
+	var publicKey *rsa.PublicKey
+	if cfg.JWTPublicKey != "" {
+		var err error
+		publicKey, err = loadPublicKey(cfg.JWTPublicKey)
+		if err != nil {
+			slog.Error("failed to load JWT public key", "error", err)
+			os.Exit(1)
+		}
+	}
+
 	// Service routes
 	r.Group(func(r chi.Router) {
 		if cfg.RateLimit.Enabled {
@@ -102,12 +116,26 @@ func main() {
 
 		for _, svc := range cfg.Services {
 			handler := buildServiceHandler(svc, cfg, ctx, logger)
-			r.Mount(svc.Prefix, http.StripPrefix(svc.Prefix, handler))
+
+			if svc.Auth {
+				if publicKey == nil {
+					slog.Error("service requires auth but JWT_PUBLIC_KEY_PATH is not set", "service", svc.Name)
+					os.Exit(1)
+				}
+				r.Route(svc.Prefix, func(r chi.Router) {
+					r.Use(middleware.JWTAuth(publicKey))
+					r.Mount("/", http.StripPrefix(svc.Prefix, handler))
+				})
+			} else {
+				r.Mount(svc.Prefix, http.StripPrefix(svc.Prefix, handler))
+			}
+
 			slog.Info(
 				"registered service",
 				"name", svc.Name,
 				"prefix", svc.Prefix,
 				"upstreams", svc.Upstreams,
+				"auth", svc.Auth,
 			)
 		}
 	})
@@ -158,4 +186,28 @@ func buildServiceHandler(
 	}
 
 	return proxy.NewHandler(lb, breakers, logger)
+}
+
+func loadPublicKey(path string) (*rsa.PublicKey, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading public key: %w", err)
+	}
+
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, fmt.Errorf("no PEM block found in %s", path)
+	}
+
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parsing public key: %w", err)
+	}
+
+	rsaPub, ok := pub.(*rsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("key is not RSA")
+	}
+
+	return rsaPub, nil
 }
