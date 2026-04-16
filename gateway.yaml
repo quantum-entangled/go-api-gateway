@@ -21,10 +21,12 @@ services:
     prefix: /catalog
     upstreams:
       - http://catalog:8080
+      - http://catalog-2:8080
     auth: false
 
   - name: orders
     prefix: /orders
     upstreams:
       - http://orders:8080
+      - http://orders-2:8080
     auth: true
