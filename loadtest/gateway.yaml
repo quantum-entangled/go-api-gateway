@@ -1,0 +1,28 @@
+port: 8080
+
+rate_limit:
+  enabled: false
+
+health_check:
+  interval: 5s
+  path: /healthz
+
+circuit_breaker:
+  enabled: true
+  max_failures: 3
+  timeout: 10s
+
+services:
+  - name: catalog
+    prefix: /catalog
+    upstreams:
+      - http://catalog:8080
+      - http://catalog-2:8080
+    auth: false
+
+  - name: orders
+    prefix: /orders
+    upstreams:
+      - http://orders:8080
+      - http://orders-2:8080
+    auth: true
