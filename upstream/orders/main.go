@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -160,24 +161,64 @@ func main() {
 }
 
 func openDB(dsn string) (*sql.DB, error) {
+	maxConns := 50
+	if v := os.Getenv("DB_MAX_CONNS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid DB_MAX_CONNS %q: %w", v, err)
+		}
+		maxConns = n
+	}
+	connMaxLifetime := 30 * time.Minute
+	if v := os.Getenv("DB_CONN_MAX_LIFETIME"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid DB_CONN_MAX_LIFETIME %q: %w", v, err)
+		}
+		connMaxLifetime = d
+	}
+
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(30 * time.Minute)
+	db.SetMaxOpenConns(maxConns)
+	db.SetMaxIdleConns(maxConns)
+	db.SetConnMaxLifetime(connMaxLifetime)
+	db.SetConnMaxIdleTime(0)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := db.PingContext(ctx); err != nil {
+	if err := warmPool(ctx, db, maxConns); err != nil {
 		db.Close()
 		return nil, err
 	}
 
 	return db, nil
+}
+
+// warmPool opens n connections in parallel and holds them briefly so they all
+// stay in the idle pool. Without this, the pool grows lazily under load - and
+// under a burst, many goroutines race to open new connections at once, which
+// can overwhelm Docker's embedded DNS resolver.
+func warmPool(ctx context.Context, db *sql.DB, n int) error {
+	conns := make([]*sql.Conn, 0, n)
+	defer func() {
+		for _, c := range conns {
+			c.Close()
+		}
+	}()
+
+	for range n {
+		c, err := db.Conn(ctx)
+		if err != nil {
+			return err
+		}
+		conns = append(conns, c)
+	}
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, msg any) {
