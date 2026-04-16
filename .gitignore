@@ -9,6 +9,9 @@
 cover.out
 cover.html
 
+# Load test results
+loadtest/vegeta/results/
+
 # IDE
 .idea/
 .vscode/
