@@ -70,8 +70,10 @@ func main() {
 	r := chi.NewRouter()
 
 	// Global middleware
+	r.Use(middleware.Recoverer(logger))
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger(logger))
+	r.Use(middleware.MaxBody(cfg.MaxBodyBytes))
 
 	// Observability middleware (active regardless of OTel endpoint -
 	// when no real provider is registered, the OTel API calls are no-ops)
@@ -141,7 +143,14 @@ func main() {
 	})
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
-	srv := &http.Server{Addr: addr, Handler: r}
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 
 	go func() {
 		slog.Info("gateway started", "addr", addr)
@@ -185,7 +194,15 @@ func buildServiceHandler(
 		}
 	}
 
-	return proxy.NewHandler(lb, breakers, logger)
+	tc := proxy.TransportConfig{
+		MaxIdleConns:        cfg.Transport.MaxIdleConns,
+		MaxIdleConnsPerHost: cfg.Transport.MaxIdleConnsPerHost,
+		IdleConnTimeout:     cfg.Transport.IdleConnTimeout,
+		DialTimeout:         cfg.Transport.DialTimeout,
+		TLSHandshakeTimeout: cfg.Transport.TLSHandshakeTimeout,
+	}
+
+	return proxy.NewHandler(lb, breakers, tc, logger)
 }
 
 func loadPublicKey(path string) (*rsa.PublicKey, error) {

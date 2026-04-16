@@ -11,14 +11,25 @@ import (
 // GatewayConfig is the top-level configuration loaded from gateway.yaml.
 type GatewayConfig struct {
 	Port           int               `yaml:"port"`
+	MaxBodyBytes   int64             `yaml:"max_body_bytes"`
 	RateLimit      RateLimitConfig   `yaml:"rate_limit"`
 	HealthCheck    HealthCheckConfig `yaml:"health_check"`
 	CircuitBreaker CBConfig          `yaml:"circuit_breaker"`
+	Transport      TransportConfig   `yaml:"transport"`
 	Services       []ServiceConfig   `yaml:"services"`
 
 	// Infra settings from environment variables (not in YAML).
 	OTelEndpoint string `yaml:"-"`
 	JWTPublicKey string `yaml:"-"`
+}
+
+// TransportConfig controls the HTTP transport used for proxying to upstreams.
+type TransportConfig struct {
+	MaxIdleConns        int           `yaml:"max_idle_conns"`
+	MaxIdleConnsPerHost int           `yaml:"max_idle_conns_per_host"`
+	IdleConnTimeout     time.Duration `yaml:"idle_conn_timeout"`
+	DialTimeout         time.Duration `yaml:"dial_timeout"`
+	TLSHandshakeTimeout time.Duration `yaml:"tls_handshake_timeout"`
 }
 
 // RateLimitConfig controls the global rate limiter.
@@ -125,6 +136,26 @@ func validate(cfg *GatewayConfig) error {
 	}
 	if cfg.HealthCheck.Interval <= 0 {
 		cfg.HealthCheck.Interval = 5 * time.Second
+	}
+
+	if cfg.MaxBodyBytes <= 0 {
+		cfg.MaxBodyBytes = 1 << 20 // 1 MB
+	}
+
+	if cfg.Transport.MaxIdleConns <= 0 {
+		cfg.Transport.MaxIdleConns = 1000
+	}
+	if cfg.Transport.MaxIdleConnsPerHost <= 0 {
+		cfg.Transport.MaxIdleConnsPerHost = 200
+	}
+	if cfg.Transport.IdleConnTimeout <= 0 {
+		cfg.Transport.IdleConnTimeout = 90 * time.Second
+	}
+	if cfg.Transport.DialTimeout <= 0 {
+		cfg.Transport.DialTimeout = 5 * time.Second
+	}
+	if cfg.Transport.TLSHandshakeTimeout <= 0 {
+		cfg.Transport.TLSHandshakeTimeout = 5 * time.Second
 	}
 
 	return nil
