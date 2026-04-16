@@ -3,10 +3,13 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
 
 	"go-api-gateway/internal/circuitbreaker"
 )
@@ -40,13 +43,21 @@ type Handler struct {
 	logger   *slog.Logger
 }
 
+// TransportConfig controls the HTTP transport used for proxying to upstreams.
+type TransportConfig struct {
+	MaxIdleConns        int
+	MaxIdleConnsPerHost int
+	IdleConnTimeout     time.Duration
+	DialTimeout         time.Duration
+	TLSHandshakeTimeout time.Duration
+}
+
 // NewHandler creates a Handler that load-balances across upstreams with
-// circuit breaker protection. Each upstream URL must have a corresponding
-// entry in the breakers map.
-//
+// circuit breaker protection and a tuned HTTP transport for upstream connections.
+// Each upstream URL must have a corresponding entry in the breakers map.
 // The returned Handler owns a single shared ReverseProxy whose Rewrite
 // function reads the target URL from the request context (set by ServeHTTP).
-func NewHandler(lb LoadBalancer, breakers map[string]*circuitbreaker.Breaker, logger *slog.Logger) *Handler {
+func NewHandler(lb LoadBalancer, breakers map[string]*circuitbreaker.Breaker, tc TransportConfig, logger *slog.Logger) *Handler {
 	h := &Handler{
 		lb:       lb,
 		breakers: breakers,
@@ -54,6 +65,7 @@ func NewHandler(lb LoadBalancer, breakers map[string]*circuitbreaker.Breaker, lo
 	}
 
 	h.proxy = &httputil.ReverseProxy{
+		Transport: newUpstreamTransport(tc),
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			target := mustGetTargetFromContext(pr.Out.Context())
 			targetURL := mustParseURL(target)
@@ -79,6 +91,14 @@ func NewHandler(lb LoadBalancer, breakers map[string]*circuitbreaker.Breaker, lo
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				jsonError(w, http.StatusRequestEntityTooLarge, map[string]string{
+					"error": "request body too large",
+				})
+				return
+			}
+
 			target := mustGetTargetFromContext(r.Context())
 			breaker := h.mustGetBreaker(target)
 
@@ -138,6 +158,21 @@ func mustParseURL(raw string) *url.URL {
 		panic("proxy: invalid upstream URL: " + raw)
 	}
 	return u
+}
+
+func newUpstreamTransport(tc TransportConfig) *http.Transport {
+	return &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   tc.DialTimeout,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		MaxIdleConns:          tc.MaxIdleConns,
+		MaxIdleConnsPerHost:   tc.MaxIdleConnsPerHost,
+		IdleConnTimeout:       tc.IdleConnTimeout,
+		TLSHandshakeTimeout:   tc.TLSHandshakeTimeout,
+		ExpectContinueTimeout: 1 * time.Second,
+		ForceAttemptHTTP2:     true,
+	}
 }
 
 func jsonError(w http.ResponseWriter, status int, msg map[string]string) {

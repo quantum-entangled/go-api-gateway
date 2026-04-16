@@ -68,7 +68,7 @@ func TestInjectTraceContext_AddsTraceparentHeader(t *testing.T) {
 
 	lb := &mockLB{url: upstream.URL}
 	breakers := newBreakers(upstream.URL, 3)
-	h := proxy.NewHandler(lb, breakers, slog.Default())
+	h := proxy.NewHandler(lb, breakers, testTransport, slog.Default())
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil).WithContext(ctx)
 
@@ -94,7 +94,7 @@ func TestInjectUserHeaders_SetsHeadersFromJWT(t *testing.T) {
 
 	lb := &mockLB{url: upstream.URL}
 	breakers := newBreakers(upstream.URL, 3)
-	proxyHandler := proxy.NewHandler(lb, breakers, slog.Default())
+	proxyHandler := proxy.NewHandler(lb, breakers, testTransport, slog.Default())
 
 	// Wrap with JWTAuth so claims land in the context.
 	handler := middleware.JWTAuth(&testKey.PublicKey)(proxyHandler)
@@ -121,7 +121,7 @@ func TestInjectUserHeaders_NoHeadersWithoutAuth(t *testing.T) {
 
 	lb := &mockLB{url: upstream.URL}
 	breakers := newBreakers(upstream.URL, 3)
-	h := proxy.NewHandler(lb, breakers, slog.Default())
+	h := proxy.NewHandler(lb, breakers, testTransport, slog.Default())
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)

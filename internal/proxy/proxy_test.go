@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +44,14 @@ func newBreakers(url string, maxFailures int) map[string]*circuitbreaker.Breaker
 	}
 }
 
+var testTransport = proxy.TransportConfig{
+	MaxIdleConns:        100,
+	MaxIdleConnsPerHost: 10,
+	IdleConnTimeout:     90 * time.Second,
+	DialTimeout:         5 * time.Second,
+	TLSHandshakeTimeout: 5 * time.Second,
+}
+
 func decodeJSON(t *testing.T, rec *httptest.ResponseRecorder) map[string]string {
 	t.Helper()
 	var m map[string]string
@@ -60,7 +69,7 @@ func TestHandler_CircuitOpen(t *testing.T) {
 		breakers[upstream.URL].RecordFailure()
 	}
 
-	h := proxy.NewHandler(lb, breakers, slog.Default())
+	h := proxy.NewHandler(lb, breakers, testTransport, slog.Default())
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
 
@@ -73,7 +82,7 @@ func TestHandler_CircuitOpen(t *testing.T) {
 
 func TestHandler_AllUpstreamsDown(t *testing.T) {
 	lb := &mockLB{url: "", err: errors.New("no healthy upstreams available")}
-	h := proxy.NewHandler(lb, map[string]*circuitbreaker.Breaker{}, slog.Default())
+	h := proxy.NewHandler(lb, map[string]*circuitbreaker.Breaker{}, testTransport, slog.Default())
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
 
@@ -90,7 +99,7 @@ func TestHandler_ProxiesToHealthyUpstream(t *testing.T) {
 	maxFailures := 3
 	breakers := newBreakers(upstream.URL, maxFailures)
 
-	h := proxy.NewHandler(lb, breakers, slog.Default())
+	h := proxy.NewHandler(lb, breakers, testTransport, slog.Default())
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
 
@@ -107,7 +116,7 @@ func TestHandler_RecordsSuccessOn2xx(t *testing.T) {
 	maxFailures := 3
 	breakers := newBreakers(upstream.URL, maxFailures)
 
-	h := proxy.NewHandler(lb, breakers, slog.Default())
+	h := proxy.NewHandler(lb, breakers, testTransport, slog.Default())
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
 
@@ -126,7 +135,7 @@ func TestHandler_RecordsFailureOn5xx(t *testing.T) {
 	maxFailures := 3
 	breakers := newBreakers(upstream.URL, maxFailures)
 
-	h := proxy.NewHandler(lb, breakers, slog.Default())
+	h := proxy.NewHandler(lb, breakers, testTransport, slog.Default())
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
 
@@ -137,13 +146,30 @@ func TestHandler_RecordsFailureOn5xx(t *testing.T) {
 	assert.Equal(t, "open", breakers[upstream.URL].State())
 }
 
+func TestHandler_MaxBytesErrorReturns413(t *testing.T) {
+	upstream := newTestUpstream(t, http.StatusOK, `{"ok":"true"}`)
+	lb := &mockLB{url: upstream.URL}
+	breakers := newBreakers(upstream.URL, 3)
+
+	h := proxy.NewHandler(lb, breakers, testTransport, slog.Default())
+	req := httptest.NewRequest("POST", "/", strings.NewReader(strings.Repeat("x", 2048)))
+	rec := httptest.NewRecorder()
+	req.Body = http.MaxBytesReader(rec, req.Body, 10)
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	body := decodeJSON(t, rec)
+	assert.Equal(t, "request body too large", body["error"])
+	assert.Equal(t, "closed", breakers[upstream.URL].State(), "413 must not trip the circuit breaker")
+}
+
 func TestHandler_RecordsFailureOnConnectionError(t *testing.T) {
 	unreachableURL := "http://localhost:0"
 	lb := &mockLB{url: unreachableURL}
 	maxFailures := 3
 	breakers := newBreakers(unreachableURL, maxFailures)
 
-	h := proxy.NewHandler(lb, breakers, slog.Default())
+	h := proxy.NewHandler(lb, breakers, testTransport, slog.Default())
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
 
