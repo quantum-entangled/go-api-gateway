@@ -37,16 +37,16 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, rate(gateway_request_duration_seconds_bucket{http_path!=\"/healthz\"}[1m]))",
-          "legendFormat": "p50"
+          "expr": "histogram_quantile(0.50, sum by (http_path, le) (rate(gateway_request_duration_seconds_bucket{http_path!=\"/healthz\"}[1m])))",
+          "legendFormat": "p50 {{http_path}}"
         },
         {
-          "expr": "histogram_quantile(0.95, rate(gateway_request_duration_seconds_bucket{http_path!=\"/healthz\"}[1m]))",
-          "legendFormat": "p95"
+          "expr": "histogram_quantile(0.95, sum by (http_path, le) (rate(gateway_request_duration_seconds_bucket{http_path!=\"/healthz\"}[1m])))",
+          "legendFormat": "p95 {{http_path}}"
         },
         {
-          "expr": "histogram_quantile(0.99, rate(gateway_request_duration_seconds_bucket{http_path!=\"/healthz\"}[1m]))",
-          "legendFormat": "p99"
+          "expr": "histogram_quantile(0.99, sum by (http_path, le) (rate(gateway_request_duration_seconds_bucket{http_path!=\"/healthz\"}[1m])))",
+          "legendFormat": "p99 {{http_path}}"
         }
       ]
     },
