@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -199,6 +200,94 @@ services:
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circuit_breaker.max_failures must be positive")
+}
+
+func TestLoad_RateLimitDefaultBackendIsMemory(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+rate_limit:
+  enabled: true
+  rate: 10
+  burst: 20
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.NoError(t, err)
+	assert.Equal(t, "memory", cfg.RateLimit.Backend)
+	assert.Positive(t, cfg.RateLimit.CleanupInterval)
+	assert.Positive(t, cfg.RateLimit.CleanupMaxIdle)
+}
+
+func TestLoad_RateLimitRedisRequiresAddr(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+rate_limit:
+  enabled: true
+  backend: redis
+  rate: 10
+  burst: 20
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "rate_limit.redis.addr is required")
+}
+
+func TestLoad_RateLimitUnknownBackend(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+rate_limit:
+  enabled: true
+  backend: dynamodb
+  rate: 10
+  burst: 20
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "rate_limit.backend")
+}
+
+func TestLoad_RateLimitRedisOptionsRoundTrip(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+rate_limit:
+  enabled: true
+  backend: redis
+  rate: 10
+  burst: 20
+  redis:
+    addr: redis:6379
+    pool_size: 42
+    dial_timeout: 2s
+    read_timeout: 750ms
+    write_timeout: 1500ms
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.NoError(t, err)
+	assert.Equal(t, "redis:6379", cfg.RateLimit.Redis.Addr)
+	assert.Equal(t, 42, cfg.RateLimit.Redis.PoolSize)
+	assert.Equal(t, 2*time.Second, cfg.RateLimit.Redis.DialTimeout)
+	assert.Equal(t, 750*time.Millisecond, cfg.RateLimit.Redis.ReadTimeout)
+	assert.Equal(t, 1500*time.Millisecond, cfg.RateLimit.Redis.WriteTimeout)
+}
+
+func TestLoad_RedisPasswordFromEnv(t *testing.T) {
+	t.Setenv("REDIS_PASSWORD", "s3cret")
+
+	cfg, err := Load(writeConfig(t, minimalServiceConfig))
+
+	require.NoError(t, err)
+	assert.Equal(t, "s3cret", cfg.RedisPassword)
 }
 
 func TestLoad_DisabledRateLimitSkipsValidation(t *testing.T) {

@@ -19,8 +19,9 @@ type GatewayConfig struct {
 	Services       []ServiceConfig   `yaml:"services"`
 
 	// Infra settings from environment variables (not in YAML).
-	OTelEndpoint string `yaml:"-"`
-	JWTPublicKey string `yaml:"-"`
+	OTelEndpoint  string `yaml:"-"`
+	JWTPublicKey  string `yaml:"-"`
+	RedisPassword string `yaml:"-"`
 }
 
 // TransportConfig controls the HTTP transport used for proxying to upstreams.
@@ -33,13 +34,25 @@ type TransportConfig struct {
 }
 
 // RateLimitConfig controls the global rate limiter.
-// When Enabled is false, no rate limiting is applied.
+// Backend selects memory (per-process) or redis (shared across instances).
 type RateLimitConfig struct {
 	Enabled         bool          `yaml:"enabled"`
+	Backend         string        `yaml:"backend"`
 	Rate            float64       `yaml:"rate"`
 	Burst           int           `yaml:"burst"`
 	CleanupInterval time.Duration `yaml:"cleanup_interval"`
 	CleanupMaxIdle  time.Duration `yaml:"cleanup_max_idle"`
+	Redis           RedisConfig   `yaml:"redis"`
+}
+
+// RedisConfig holds the options passed to redis.NewClient.
+// Zero values fall back to go-redis defaults.
+type RedisConfig struct {
+	Addr         string        `yaml:"addr"`
+	PoolSize     int           `yaml:"pool_size"`
+	DialTimeout  time.Duration `yaml:"dial_timeout"`
+	ReadTimeout  time.Duration `yaml:"read_timeout"`
+	WriteTimeout time.Duration `yaml:"write_timeout"`
 }
 
 // HealthCheckConfig controls upstream health polling.
@@ -49,7 +62,6 @@ type HealthCheckConfig struct {
 }
 
 // CBConfig controls circuit breakers wrapping upstream calls.
-// When Enabled is false, requests go directly to the upstream.
 type CBConfig struct {
 	Enabled     bool          `yaml:"enabled"`
 	MaxFailures int           `yaml:"max_failures"`
@@ -83,6 +95,7 @@ func Load(path string) (*GatewayConfig, error) {
 
 	cfg.OTelEndpoint = os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	cfg.JWTPublicKey = os.Getenv("JWT_PUBLIC_KEY_PATH")
+	cfg.RedisPassword = os.Getenv("REDIS_PASSWORD")
 
 	if err := validate(&cfg); err != nil {
 		return nil, fmt.Errorf("config validation failed: %w", err)
@@ -119,6 +132,24 @@ func validate(cfg *GatewayConfig) error {
 		}
 		if cfg.RateLimit.Burst <= 0 {
 			return fmt.Errorf("rate_limit.burst must be positive")
+		}
+		if cfg.RateLimit.Backend == "" {
+			cfg.RateLimit.Backend = "memory"
+		}
+		if cfg.RateLimit.CleanupInterval <= 0 {
+			cfg.RateLimit.CleanupInterval = 1 * time.Minute
+		}
+		if cfg.RateLimit.CleanupMaxIdle <= 0 {
+			cfg.RateLimit.CleanupMaxIdle = 3 * time.Minute
+		}
+		switch cfg.RateLimit.Backend {
+		case "memory":
+		case "redis":
+			if cfg.RateLimit.Redis.Addr == "" {
+				return fmt.Errorf("rate_limit.redis.addr is required when backend is redis")
+			}
+		default:
+			return fmt.Errorf("rate_limit.backend must be \"memory\" or \"redis\" (got %q)", cfg.RateLimit.Backend)
 		}
 	}
 
