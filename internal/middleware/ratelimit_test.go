@@ -2,6 +2,7 @@ package middleware_test
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -24,7 +25,7 @@ func newTestLimiter(t *testing.T, r rate.Limit, b int) ratelimit.Limiter {
 
 func TestRateLimit_AllowsWithinLimit(t *testing.T) {
 	lim := newTestLimiter(t, rate.Limit(1), 3)
-	handler := middleware.RateLimit(lim, middleware.KeyByIP)(okHandler())
+	handler := middleware.RateLimit(lim, middleware.KeyByIP, slog.Default())(okHandler())
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
@@ -35,7 +36,7 @@ func TestRateLimit_AllowsWithinLimit(t *testing.T) {
 
 func TestRateLimit_RejectsOverLimit(t *testing.T) {
 	lim := newTestLimiter(t, rate.Limit(1), 2)
-	handler := middleware.RateLimit(lim, middleware.KeyByIP)(okHandler())
+	handler := middleware.RateLimit(lim, middleware.KeyByIP, slog.Default())(okHandler())
 
 	for range 2 {
 		rec := httptest.NewRecorder()
@@ -54,7 +55,7 @@ func TestRateLimit_RejectsOverLimit(t *testing.T) {
 
 func TestRateLimit_SetsRetryAfterHeader(t *testing.T) {
 	lim := newTestLimiter(t, rate.Limit(1), 2)
-	handler := middleware.RateLimit(lim, middleware.KeyByIP)(okHandler())
+	handler := middleware.RateLimit(lim, middleware.KeyByIP, slog.Default())(okHandler())
 
 	for range 2 {
 		req := httptest.NewRequest("GET", "/", nil)

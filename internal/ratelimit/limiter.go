@@ -9,8 +9,9 @@ import (
 )
 
 // Limiter decides whether a request identified by key should be allowed.
+// Implementations may perform I/O.
 type Limiter interface {
-	Allow(key string) bool
+	Allow(ctx context.Context, key string) (bool, error)
 }
 
 type entry struct {
@@ -18,9 +19,8 @@ type entry struct {
 	lastSeen time.Time
 }
 
-// MemoryLimiter is an in-memory, per-key rate limiter backed by token buckets.
-// Each unique key (e.g., client IP) gets its own bucket with the configured
-// rate and burst size. Stale entries are cleaned up periodically.
+// MemoryLimiter is an in-memory, per-key token-bucket limiter.
+// Stale entries are cleaned up in the background.
 type MemoryLimiter struct {
 	entries         sync.Map
 	r               rate.Limit
@@ -58,12 +58,13 @@ func NewMemoryLimiter(
 }
 
 // Allow reports whether the request identified by key should be allowed.
-func (ml *MemoryLimiter) Allow(key string) bool {
+// It ignores ctx, as MemoryLimiter performs no I/O.
+func (ml *MemoryLimiter) Allow(_ context.Context, key string) (bool, error) {
 	// Fast path: key already exists
 	if value, ok := ml.entries.Load(key); ok {
 		e := value.(*entry)
 		ml.entries.Store(key, &entry{limiter: e.limiter, lastSeen: time.Now()})
-		return e.limiter.Allow()
+		return e.limiter.Allow(), nil
 	}
 
 	// Slow path: first request from this key
@@ -72,10 +73,10 @@ func (ml *MemoryLimiter) Allow(key string) bool {
 	if loaded {
 		// Another goroutine was slightly faster
 		e := actual.(*entry)
-		return e.limiter.Allow()
+		return e.limiter.Allow(), nil
 	}
 
-	return newEntry.limiter.Allow()
+	return newEntry.limiter.Allow(), nil
 }
 
 func (ml *MemoryLimiter) cleanup() {
