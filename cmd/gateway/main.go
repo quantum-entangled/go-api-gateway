@@ -27,6 +27,7 @@ import (
 	"go-api-gateway/internal/proxy"
 	"go-api-gateway/internal/ratelimit"
 
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/time/rate"
 )
@@ -47,7 +48,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// OTel setup (optional - disabled when endpoint is empty)
 	if cfg.OTelEndpoint != "" {
 		sdk, err := gatewayotel.Setup(ctx, cfg.OTelEndpoint)
 		if err != nil {
@@ -69,14 +69,12 @@ func main() {
 
 	r := chi.NewRouter()
 
-	// Global middleware
 	r.Use(middleware.Recoverer(logger))
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger(logger))
 	r.Use(middleware.MaxBody(cfg.MaxBodyBytes))
 
-	// Observability middleware (active regardless of OTel endpoint -
-	// when no real provider is registered, the OTel API calls are no-ops)
+	// When no OTel provider is registered, these calls are no-ops.
 	m, err := metrics.NewMetrics(otel.GetMeterProvider().Meter("go-api-gateway"))
 	if err != nil {
 		slog.Error("failed to create metrics", "error", err)
@@ -92,7 +90,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Load RSA public key for JWT validation (optional - required when any service has auth: true)
+	// Required only when a service has auth: true, checked below per-service.
 	var publicKey *rsa.PublicKey
 	if cfg.JWTPublicKey != "" {
 		var err error
@@ -103,17 +101,14 @@ func main() {
 		}
 	}
 
-	// Service routes
 	r.Group(func(r chi.Router) {
 		if cfg.RateLimit.Enabled {
-			limiter := ratelimit.NewMemoryLimiter(
-				ctx,
-				rate.Limit(cfg.RateLimit.Rate),
-				cfg.RateLimit.Burst,
-				cfg.RateLimit.CleanupInterval,
-				cfg.RateLimit.CleanupMaxIdle,
-			)
-			r.Use(middleware.RateLimit(limiter, middleware.KeyByIP))
+			limiter, err := buildLimiter(ctx, cfg.RateLimit, cfg.RedisPassword)
+			if err != nil {
+				slog.Error("failed to build rate limiter", "error", err)
+				os.Exit(1)
+			}
+			r.Use(middleware.RateLimit(limiter, middleware.KeyByIP, logger))
 		}
 
 		for _, svc := range cfg.Services {
@@ -167,6 +162,47 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server shutdown", "error", err)
+	}
+}
+
+// buildLimiter pings Redis at startup so a misconfigured backend fails boot
+// instead of silently failing open on every request.
+func buildLimiter(ctx context.Context, cfg config.RateLimitConfig, password string) (ratelimit.Limiter, error) {
+	switch cfg.Backend {
+	case "redis":
+		opts := &redis.Options{Addr: cfg.Redis.Addr, Password: password}
+
+		if cfg.Redis.PoolSize > 0 {
+			opts.PoolSize = cfg.Redis.PoolSize
+		}
+		if cfg.Redis.DialTimeout > 0 {
+			opts.DialTimeout = cfg.Redis.DialTimeout
+		}
+		if cfg.Redis.ReadTimeout > 0 {
+			opts.ReadTimeout = cfg.Redis.ReadTimeout
+		}
+		if cfg.Redis.WriteTimeout > 0 {
+			opts.WriteTimeout = cfg.Redis.WriteTimeout
+		}
+
+		client := redis.NewClient(opts)
+		pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := client.Ping(pingCtx).Err(); err != nil {
+			return nil, fmt.Errorf("redis ping at %s: %w", cfg.Redis.Addr, err)
+		}
+
+		slog.Info("rate limiter: redis", "addr", cfg.Redis.Addr)
+		return ratelimit.NewRedisLimiter(client, cfg.Rate, cfg.Burst), nil
+	default:
+		slog.Info("rate limiter: memory")
+		return ratelimit.NewMemoryLimiter(
+			ctx,
+			rate.Limit(cfg.Rate),
+			cfg.Burst,
+			cfg.CleanupInterval,
+			cfg.CleanupMaxIdle,
+		), nil
 	}
 }
 

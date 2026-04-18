@@ -2,10 +2,11 @@ port: 8080
 
 rate_limit:
   enabled: true
+  backend: redis
   rate: 10
   burst: 20
-  cleanup_interval: 1m
-  cleanup_max_idle: 3m
+  redis:
+    addr: redis:6379
 
 health_check:
   interval: 5s
