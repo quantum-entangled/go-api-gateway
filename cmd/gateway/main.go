@@ -85,6 +85,7 @@ func main() {
 		otel.GetTracerProvider().Tracer("go-api-gateway"),
 		otel.GetTextMapPropagator(),
 	))
+	r.Use(middleware.ConcurrencyLimit(cfg.MaxInFlight))
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -145,6 +146,7 @@ func main() {
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    cfg.MaxHeaderBytes,
 	}
 
 	go func() {

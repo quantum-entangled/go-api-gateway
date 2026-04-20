@@ -1,4 +1,5 @@
 port: 8080
+max_in_flight: 300
 
 rate_limit:
   enabled: false
