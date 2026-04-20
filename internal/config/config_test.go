@@ -19,6 +19,9 @@ func writeConfig(t *testing.T, content string) string {
 
 const validConfig = `
 port: 9090
+max_body_bytes: 32768
+max_header_bytes: 16384
+max_in_flight: 300
 
 rate_limit:
   enabled: true
@@ -66,6 +69,9 @@ func TestLoad(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 9090, cfg.Port)
+	assert.Equal(t, int64(32768), cfg.MaxBodyBytes)
+	assert.Equal(t, 16384, cfg.MaxHeaderBytes)
+	assert.Equal(t, 300, cfg.MaxInFlight)
 	assert.Equal(t, "otel:4318", cfg.OTelEndpoint)
 	assert.Equal(t, "/keys/dev.pem", cfg.JWTPublicKey)
 
@@ -91,6 +97,14 @@ func TestLoad_DefaultPort(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, 8080, cfg.Port)
+}
+
+func TestLoad_DefaultBodyAndHeaderLimits(t *testing.T) {
+	cfg, err := Load(writeConfig(t, minimalServiceConfig))
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(1<<20), cfg.MaxBodyBytes)
+	assert.Equal(t, 32<<10, cfg.MaxHeaderBytes)
 }
 
 func TestLoad_DefaultHealthCheck(t *testing.T) {

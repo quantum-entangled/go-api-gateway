@@ -12,6 +12,8 @@ import (
 type GatewayConfig struct {
 	Port           int               `yaml:"port"`
 	MaxBodyBytes   int64             `yaml:"max_body_bytes"`
+	MaxHeaderBytes int               `yaml:"max_header_bytes"`
+	MaxInFlight    int               `yaml:"max_in_flight"`
 	RateLimit      RateLimitConfig   `yaml:"rate_limit"`
 	HealthCheck    HealthCheckConfig `yaml:"health_check"`
 	CircuitBreaker CBConfig          `yaml:"circuit_breaker"`
@@ -171,6 +173,9 @@ func validate(cfg *GatewayConfig) error {
 
 	if cfg.MaxBodyBytes <= 0 {
 		cfg.MaxBodyBytes = 1 << 20 // 1 MB
+	}
+	if cfg.MaxHeaderBytes <= 0 {
+		cfg.MaxHeaderBytes = 32 << 10 // 32 KB
 	}
 
 	if cfg.Transport.MaxIdleConns <= 0 {
