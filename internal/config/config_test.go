@@ -319,6 +319,104 @@ services:
 	assert.False(t, cfg.RateLimit.Enabled)
 }
 
+func TestLoad_ServiceRateLimitOverride(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+services:
+  - name: orders
+    prefix: /orders
+    upstreams: [http://localhost:8081]
+    auth: true
+    rate_limit:
+      rate: 5
+      burst: 10
+      key_by: jwt_sub
+`))
+
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Services[0].RateLimit)
+	assert.Equal(t, 5.0, cfg.Services[0].RateLimit.Rate)
+	assert.Equal(t, 10, cfg.Services[0].RateLimit.Burst)
+	assert.Equal(t, "jwt_sub", cfg.Services[0].RateLimit.KeyBy)
+}
+
+func TestLoad_ServiceRateLimitDefaultsKeyByToIP(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+    rate_limit:
+      rate: 5
+      burst: 10
+`))
+
+	require.NoError(t, err)
+	assert.Equal(t, "ip", cfg.Services[0].RateLimit.KeyBy)
+}
+
+func TestLoad_ServiceRateLimitInvalidRate(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+    rate_limit:
+      rate: 0
+      burst: 10
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "rate_limit.rate must be positive")
+}
+
+func TestLoad_ServiceRateLimitInvalidBurst(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+    rate_limit:
+      rate: 5
+      burst: 0
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "rate_limit.burst must be positive")
+}
+
+func TestLoad_ServiceRateLimitUnknownKeyBy(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+    rate_limit:
+      rate: 5
+      burst: 10
+      key_by: header
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "rate_limit.key_by")
+}
+
+func TestLoad_ServiceRateLimitJWTSubRequiresAuth(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+    auth: false
+    rate_limit:
+      rate: 5
+      burst: 10
+      key_by: jwt_sub
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires auth: true")
+}
+
 func TestLoad_DisabledCircuitBreakerSkipsValidation(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 circuit_breaker:

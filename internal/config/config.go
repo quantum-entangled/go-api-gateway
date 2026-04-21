@@ -72,10 +72,19 @@ type CBConfig struct {
 
 // ServiceConfig defines a single backend service the gateway proxies to.
 type ServiceConfig struct {
-	Name      string   `yaml:"name"`
-	Prefix    string   `yaml:"prefix"`
-	Upstreams []string `yaml:"upstreams"`
-	Auth      bool     `yaml:"auth"`
+	Name      string                  `yaml:"name"`
+	Prefix    string                  `yaml:"prefix"`
+	Upstreams []string                `yaml:"upstreams"`
+	Auth      bool                    `yaml:"auth"`
+	RateLimit *ServiceRateLimitConfig `yaml:"rate_limit,omitempty"`
+}
+
+// ServiceRateLimitConfig overrides the global rate limit for a service.
+// KeyBy is "ip" or "jwt_sub"; jwt_sub requires Auth: true on the service.
+type ServiceRateLimitConfig struct {
+	Rate  float64 `yaml:"rate"`
+	Burst int     `yaml:"burst"`
+	KeyBy string  `yaml:"key_by"`
 }
 
 // Load reads gateway configuration from the given YAML file path and
@@ -126,6 +135,10 @@ func validate(cfg *GatewayConfig) error {
 			return fmt.Errorf("service %q: duplicate prefix %q", svc.Name, svc.Prefix)
 		}
 		seen[svc.Prefix] = true
+
+		if err := validateServiceRateLimit(svc); err != nil {
+			return err
+		}
 	}
 
 	if cfg.RateLimit.Enabled {
@@ -192,6 +205,32 @@ func validate(cfg *GatewayConfig) error {
 	}
 	if cfg.Transport.TLSHandshakeTimeout <= 0 {
 		cfg.Transport.TLSHandshakeTimeout = 5 * time.Second
+	}
+
+	return nil
+}
+
+func validateServiceRateLimit(svc ServiceConfig) error {
+	rl := svc.RateLimit
+	if rl == nil {
+		return nil
+	}
+	if rl.Rate <= 0 {
+		return fmt.Errorf("service %q: rate_limit.rate must be positive", svc.Name)
+	}
+	if rl.Burst <= 0 {
+		return fmt.Errorf("service %q: rate_limit.burst must be positive", svc.Name)
+	}
+
+	switch rl.KeyBy {
+	case "", "ip":
+		rl.KeyBy = "ip"
+	case "jwt_sub":
+		if !svc.Auth {
+			return fmt.Errorf("service %q: rate_limit.key_by=jwt_sub requires auth: true", svc.Name)
+		}
+	default:
+		return fmt.Errorf("service %q: rate_limit.key_by must be \"ip\" or \"jwt_sub\" (got %q)", svc.Name, rl.KeyBy)
 	}
 
 	return nil
