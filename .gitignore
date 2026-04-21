@@ -2,9 +2,6 @@
 /bin/
 *.exe
 
-# Environment
-.env
-
 # Test coverage
 cover.out
 cover.html

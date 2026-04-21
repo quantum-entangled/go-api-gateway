@@ -135,7 +135,7 @@ services:
     ports:
       - "${GATEWAY_PORT}:${GATEWAY_PORT}"
     volumes:
-      - ./gateway.yaml:/etc/gateway/gateway.yaml:ro
+      - ${GATEWAY_CONFIG:-./gateway.yaml}:/etc/gateway/gateway.yaml:ro
       - ./dev.pem:/etc/gateway/dev.pem:ro
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
