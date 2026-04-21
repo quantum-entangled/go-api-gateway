@@ -4,8 +4,8 @@ max_in_flight: 300
 rate_limit:
   enabled: true
   backend: redis
-  rate: 10
-  burst: 20
+  rate: 20
+  burst: 30
   redis:
     addr: redis:6379
 
@@ -32,3 +32,7 @@ services:
       - http://orders:8080
       - http://orders-2:8080
     auth: true
+    rate_limit:
+        rate: 5
+        burst: 10                                                                                      
+        key_by: jwt_sub

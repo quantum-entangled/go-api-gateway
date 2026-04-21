@@ -102,41 +102,45 @@ func main() {
 		}
 	}
 
-	r.Group(func(r chi.Router) {
-		if cfg.RateLimit.Enabled {
-			limiter, err := buildLimiter(ctx, cfg.RateLimit, cfg.RedisPassword)
-			if err != nil {
-				slog.Error("failed to build rate limiter", "error", err)
-				os.Exit(1)
-			}
-			r.Use(middleware.RateLimit(limiter, middleware.KeyByIP, logger))
+	redisClient, err := buildRedisClient(ctx, cfg)
+	if err != nil {
+		slog.Error("failed to build redis client", "error", err)
+		os.Exit(1)
+	}
+
+	for _, svc := range cfg.Services {
+		handler := buildServiceHandler(svc, cfg, ctx, logger)
+
+		limiter, keyFunc, err := buildServiceLimiter(ctx, svc, cfg, redisClient)
+		if err != nil {
+			slog.Error("failed to build service rate limiter", "service", svc.Name, "error", err)
+			os.Exit(1)
 		}
 
-		for _, svc := range cfg.Services {
-			handler := buildServiceHandler(svc, cfg, ctx, logger)
+		if svc.Auth && publicKey == nil {
+			slog.Error("service requires auth but JWT_PUBLIC_KEY_PATH is not set", "service", svc.Name)
+			os.Exit(1)
+		}
 
+		r.Route(svc.Prefix, func(r chi.Router) {
 			if svc.Auth {
-				if publicKey == nil {
-					slog.Error("service requires auth but JWT_PUBLIC_KEY_PATH is not set", "service", svc.Name)
-					os.Exit(1)
-				}
-				r.Route(svc.Prefix, func(r chi.Router) {
-					r.Use(middleware.JWTAuth(publicKey))
-					r.Mount("/", http.StripPrefix(svc.Prefix, handler))
-				})
-			} else {
-				r.Mount(svc.Prefix, http.StripPrefix(svc.Prefix, handler))
+				r.Use(middleware.JWTAuth(publicKey))
 			}
+			if limiter != nil {
+				r.Use(middleware.RateLimit(limiter, keyFunc, logger))
+			}
+			r.Mount("/", http.StripPrefix(svc.Prefix, handler))
+		})
 
-			slog.Info(
-				"registered service",
-				"name", svc.Name,
-				"prefix", svc.Prefix,
-				"upstreams", svc.Upstreams,
-				"auth", svc.Auth,
-			)
-		}
-	})
+		slog.Info(
+			"registered service",
+			"name", svc.Name,
+			"prefix", svc.Prefix,
+			"upstreams", svc.Upstreams,
+			"auth", svc.Auth,
+			"rate_limited", limiter != nil,
+		)
+	}
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	srv := &http.Server{
@@ -167,45 +171,88 @@ func main() {
 	}
 }
 
-// buildLimiter pings Redis at startup so a misconfigured backend fails boot
-// instead of silently failing open on every request.
-func buildLimiter(ctx context.Context, cfg config.RateLimitConfig, password string) (ratelimit.Limiter, error) {
-	switch cfg.Backend {
-	case "redis":
-		opts := &redis.Options{Addr: cfg.Redis.Addr, Password: password}
-
-		if cfg.Redis.PoolSize > 0 {
-			opts.PoolSize = cfg.Redis.PoolSize
-		}
-		if cfg.Redis.DialTimeout > 0 {
-			opts.DialTimeout = cfg.Redis.DialTimeout
-		}
-		if cfg.Redis.ReadTimeout > 0 {
-			opts.ReadTimeout = cfg.Redis.ReadTimeout
-		}
-		if cfg.Redis.WriteTimeout > 0 {
-			opts.WriteTimeout = cfg.Redis.WriteTimeout
-		}
-
-		client := redis.NewClient(opts)
-		pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if err := client.Ping(pingCtx).Err(); err != nil {
-			return nil, fmt.Errorf("redis ping at %s: %w", cfg.Redis.Addr, err)
-		}
-
-		slog.Info("rate limiter: redis", "addr", cfg.Redis.Addr)
-		return ratelimit.NewRedisLimiter(client, cfg.Rate, cfg.Burst), nil
-	default:
-		slog.Info("rate limiter: memory")
-		return ratelimit.NewMemoryLimiter(
-			ctx,
-			rate.Limit(cfg.Rate),
-			cfg.Burst,
-			cfg.CleanupInterval,
-			cfg.CleanupMaxIdle,
-		), nil
+// buildRedisClient returns a connected *redis.Client when the global
+// rate limiter is enabled with backend=redis, or nil otherwise. Pinging at
+// startup surfaces a misconfigured backend before the first request.
+func buildRedisClient(ctx context.Context, cfg *config.GatewayConfig) (*redis.Client, error) {
+	if !cfg.RateLimit.Enabled || cfg.RateLimit.Backend != "redis" {
+		return nil, nil
 	}
+
+	rc := cfg.RateLimit.Redis
+	opts := &redis.Options{Addr: rc.Addr, Password: cfg.RedisPassword}
+	if rc.PoolSize > 0 {
+		opts.PoolSize = rc.PoolSize
+	}
+	if rc.DialTimeout > 0 {
+		opts.DialTimeout = rc.DialTimeout
+	}
+	if rc.ReadTimeout > 0 {
+		opts.ReadTimeout = rc.ReadTimeout
+	}
+	if rc.WriteTimeout > 0 {
+		opts.WriteTimeout = rc.WriteTimeout
+	}
+
+	client := redis.NewClient(opts)
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		return nil, fmt.Errorf("redis ping at %s: %w", rc.Addr, err)
+	}
+
+	slog.Info("redis client: connected", "addr", rc.Addr)
+	return client, nil
+}
+
+// buildServiceLimiter returns the limiter and key function for one service.
+// An override on the service wins over the global defaults; if neither
+// applies, the returned limiter is nil (service has no rate limiting).
+func buildServiceLimiter(
+	ctx context.Context,
+	svc config.ServiceConfig,
+	cfg *config.GatewayConfig,
+	redisClient *redis.Client,
+) (ratelimit.Limiter, func(*http.Request) string, error) {
+	var (
+		r     float64
+		b     int
+		keyBy string
+	)
+
+	switch {
+	case svc.RateLimit != nil:
+		r = svc.RateLimit.Rate
+		b = svc.RateLimit.Burst
+		keyBy = svc.RateLimit.KeyBy
+	case cfg.RateLimit.Enabled:
+		r = cfg.RateLimit.Rate
+		b = cfg.RateLimit.Burst
+		keyBy = "ip"
+	default:
+		return nil, nil, nil
+	}
+
+	keyFunc := middleware.KeyByIP
+	if keyBy == "jwt_sub" {
+		keyFunc = middleware.KeyByJWTSub
+	}
+	prefix := "svc:" + svc.Name + ":"
+
+	if redisClient != nil {
+		return ratelimit.NewRedisLimiter(redisClient, prefix, r, b), keyFunc, nil
+	}
+
+	interval := cfg.RateLimit.CleanupInterval
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	maxIdle := cfg.RateLimit.CleanupMaxIdle
+	if maxIdle <= 0 {
+		maxIdle = 3 * time.Minute
+	}
+
+	return ratelimit.NewMemoryLimiter(ctx, prefix, rate.Limit(r), b, interval, maxIdle), keyFunc, nil
 }
 
 func buildServiceHandler(
