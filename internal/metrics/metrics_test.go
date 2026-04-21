@@ -135,10 +135,34 @@ func TestMiddlewareDefaultsTo200WithoutWriteHeader(t *testing.T) {
 	rm := collect(t, reader)
 	got := findMetric(t, rm, "gateway.requests.total")
 
-	sum, _ := got.Data.(metricdata.Sum[int64])
+	sum, ok := got.Data.(metricdata.Sum[int64])
+	require.True(t, ok, "expected Sum[int64] data type")
 	dp := sum.DataPoints[0]
 
 	assertAttr(t, dp.Attributes, "http.status", "200")
+}
+
+func TestMiddlewareLabelsUnroutedRequestsAsShed(t *testing.T) {
+	m, reader := newTestMetrics(t)
+
+	shedBefore := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+	handler := m.Middleware()(shedBefore)
+
+	req := httptest.NewRequest("GET", "/anything", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	rm := collect(t, reader)
+	got := findMetric(t, rm, "gateway.requests.total")
+
+	sum, _ := got.Data.(metricdata.Sum[int64])
+	require.Len(t, sum.DataPoints, 1)
+	dp := sum.DataPoints[0]
+
+	assertAttr(t, dp.Attributes, "http.path", "(shed)")
+	assertAttr(t, dp.Attributes, "http.status", "503")
 }
 
 func TestMiddlewareRecords5xxStatus(t *testing.T) {
@@ -157,7 +181,8 @@ func TestMiddlewareRecords5xxStatus(t *testing.T) {
 	rm := collect(t, reader)
 	got := findMetric(t, rm, "gateway.requests.total")
 
-	sum, _ := got.Data.(metricdata.Sum[int64])
+	sum, ok := got.Data.(metricdata.Sum[int64])
+	require.True(t, ok, "expected Sum[int64] data type")
 	dp := sum.DataPoints[0]
 
 	assertAttr(t, dp.Attributes, "http.status", "502")

@@ -57,6 +57,9 @@ func (m *Metrics) Middleware() func(http.Handler) http.Handler {
 
 			method := attribute.String("http.method", r.Method)
 			routePattern := chi.RouteContext(r.Context()).RoutePattern()
+			if routePattern == "" {
+				routePattern = "(shed)"
+			}
 			path := attribute.String("http.path", routePattern)
 			status := attribute.String("http.status", strconv.Itoa(rw.status))
 
