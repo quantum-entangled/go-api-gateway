@@ -47,3 +47,13 @@ func KeyByIP(r *http.Request) string {
 	}
 	return host
 }
+
+// KeyByJWTSub returns the authenticated user's subject from context,
+// falling back to KeyByIP when no claims are present. Must be mounted
+// after JWTAuth in the chain, otherwise it always falls back.
+func KeyByJWTSub(r *http.Request) string {
+	if claims, ok := ClaimsFromContext(r.Context()); ok && claims.Subject != "" {
+		return claims.Subject
+	}
+	return KeyByIP(r)
+}
