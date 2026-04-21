@@ -31,9 +31,11 @@ type MemoryLimiter struct {
 
 // NewMemoryLimiter creates a MemoryLimiter that allows r requests per second
 // with a burst size of b. Stale entries (not seen for cleanupMaxIdle) are
-// removed every cleanupInterval.
+// removed every cleanupInterval. The prefix is accepted for parity with
+// NewRedisLimiter and ignored: each instance owns its own map.
 func NewMemoryLimiter(
 	ctx context.Context,
+	_ string,
 	r rate.Limit,
 	b int,
 	cleanupInterval, cleanupMaxIdle time.Duration,

@@ -30,7 +30,7 @@ func TestMemoryLimiter_AllowsUpToBurst(t *testing.T) {
 
 	r := 1
 	b := 5
-	ml := ratelimit.NewMemoryLimiter(ctx, rate.Limit(r), b, time.Minute, time.Minute)
+	ml := ratelimit.NewMemoryLimiter(ctx, "", rate.Limit(r), b, time.Minute, time.Minute)
 
 	for i := range b {
 		require.True(t, mustAllowOrReject(t, ml, "client-1"), "request %d should be allowed", i+1)
@@ -45,7 +45,7 @@ func TestMemoryLimiter_SeparateKeysAreIndependent(t *testing.T) {
 
 	r := 1
 	b := 5
-	ml := ratelimit.NewMemoryLimiter(ctx, rate.Limit(r), b, time.Minute, time.Minute)
+	ml := ratelimit.NewMemoryLimiter(ctx, "", rate.Limit(r), b, time.Minute, time.Minute)
 
 	for i := range b {
 		require.True(t, mustAllowOrReject(t, ml, "client-1"), "request %d should be allowed", i+1)
@@ -61,7 +61,7 @@ func TestMemoryLimiter_RefillsOverTime(t *testing.T) {
 	// 1 token per 10ms
 	r := 100
 	b := 5
-	ml := ratelimit.NewMemoryLimiter(ctx, rate.Limit(r), b, 1*time.Minute, 1*time.Minute)
+	ml := ratelimit.NewMemoryLimiter(ctx, "", rate.Limit(r), b, 1*time.Minute, 1*time.Minute)
 
 	for i := range b {
 		require.True(t, mustAllowOrReject(t, ml, "client-1"), "request %d should be allowed", i+1)
@@ -77,7 +77,7 @@ func TestMemoryLimiter_CleanupRemovesStaleEntries(t *testing.T) {
 
 	r := 1
 	b := 5
-	ml := ratelimit.NewMemoryLimiter(ctx, rate.Limit(r), b, 5*time.Millisecond, 5*time.Millisecond)
+	ml := ratelimit.NewMemoryLimiter(ctx, "", rate.Limit(r), b, 5*time.Millisecond, 5*time.Millisecond)
 
 	require.True(t, mustAllowOrReject(t, ml, "client-1"), "request 1 should be allowed")
 	assert.Equal(t, 1, ml.Len(), "should have 1 tracked key")

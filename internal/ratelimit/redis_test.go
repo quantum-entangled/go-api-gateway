@@ -43,7 +43,7 @@ func TestRedisLimiter_AllowsUpToBurst(t *testing.T) {
 	client := newRedisClient(t)
 	r := 1
 	b := 5
-	rl := ratelimit.NewRedisLimiter(client, float64(r), b)
+	rl := ratelimit.NewRedisLimiter(client, "", float64(r), b)
 
 	for i := range b {
 		require.True(t, mustAllowOrReject(t, rl, "client-1"), "request %d should be allowed", i+1)
@@ -56,7 +56,7 @@ func TestRedisLimiter_SeparateKeysAreIndependent(t *testing.T) {
 	client := newRedisClient(t)
 	r := 1
 	b := 5
-	rl := ratelimit.NewRedisLimiter(client, float64(r), b)
+	rl := ratelimit.NewRedisLimiter(client, "", float64(r), b)
 
 	for i := range b {
 		require.True(t, mustAllowOrReject(t, rl, "client-1"), "request %d should be allowed", i+1)
@@ -70,7 +70,7 @@ func TestRedisLimiter_RefillsOverTime(t *testing.T) {
 	// 1 token per 10ms
 	r := 100
 	b := 5
-	rl := ratelimit.NewRedisLimiter(client, float64(r), b)
+	rl := ratelimit.NewRedisLimiter(client, "", float64(r), b)
 
 	for i := range b {
 		require.True(t, mustAllowOrReject(t, rl, "client-1"), "request %d should be allowed", i+1)
@@ -80,14 +80,31 @@ func TestRedisLimiter_RefillsOverTime(t *testing.T) {
 	assert.True(t, mustAllowOrReject(t, rl, "client-1"), "request %d should be allowed", b+1)
 }
 
+func TestRedisLimiter_PrefixesIsolateKeys(t *testing.T) {
+	client := newRedisClient(t)
+	r := 1
+	b := 5
+	rlCatalog := ratelimit.NewRedisLimiter(client, "svc:catalog:", float64(r), b)
+	rlOrders := ratelimit.NewRedisLimiter(client, "svc:orders:", float64(r), b)
+
+	for i := range b {
+		require.True(t, mustAllowOrReject(t, rlCatalog, "client-1"), "catalog request %d should be allowed", i+1)
+	}
+	require.False(t, mustAllowOrReject(t, rlCatalog, "client-1"))
+
+	for i := range b {
+		assert.True(t, mustAllowOrReject(t, rlOrders, "client-1"), "orders request %d should still have full burst", i+1)
+	}
+}
+
 // Two RedisLimiter instances against the same Redis must share the bucket.
 // This is the defining property vs the in-memory limiter.
 func TestRedisLimiter_SharedAcrossInstances(t *testing.T) {
 	client := newRedisClient(t)
 	r := 1
 	b := 5
-	rlFirst := ratelimit.NewRedisLimiter(client, float64(r), b)
-	rlSecond := ratelimit.NewRedisLimiter(client, float64(r), b)
+	rlFirst := ratelimit.NewRedisLimiter(client, "", float64(r), b)
+	rlSecond := ratelimit.NewRedisLimiter(client, "", float64(r), b)
 
 	for i := range b {
 		var rl ratelimit.Limiter

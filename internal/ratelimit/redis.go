@@ -8,9 +8,11 @@ import (
 )
 
 // RedisLimiter implements Limiter against a shared Redis instance, so
-// multiple gateway processes share one token bucket per key.
+// multiple gateway processes share one token bucket per key. Prefix
+// isolates the key space per service when multiple limiters share a client.
 type RedisLimiter struct {
 	client *redis.Client
+	prefix string
 	r      float64
 	b      int
 	script *redis.Script
@@ -44,10 +46,12 @@ return allowed
 `
 
 // NewRedisLimiter creates a RedisLimiter that allows r requests per second
-// per key with a burst of b.
-func NewRedisLimiter(client *redis.Client, r float64, b int) *RedisLimiter {
+// per key with a burst of b. Prefix is prepended to every key before the
+// Lua call, so services sharing one client do not collide.
+func NewRedisLimiter(client *redis.Client, prefix string, r float64, b int) *RedisLimiter {
 	return &RedisLimiter{
 		client: client,
+		prefix: prefix,
 		r:      r,
 		b:      b,
 		script: redis.NewScript(limiterLuaScript),
@@ -56,7 +60,7 @@ func NewRedisLimiter(client *redis.Client, r float64, b int) *RedisLimiter {
 
 // Allow reports whether the request identified by key should be allowed.
 func (rl *RedisLimiter) Allow(ctx context.Context, key string) (bool, error) {
-	res, err := rl.script.Run(ctx, rl.client, []string{key}, rl.r, rl.b, time.Now().UnixMilli()).Int()
+	res, err := rl.script.Run(ctx, rl.client, []string{rl.prefix + key}, rl.r, rl.b, time.Now().UnixMilli()).Int()
 	if err != nil {
 		return false, err
 	}
