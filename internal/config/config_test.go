@@ -169,6 +169,21 @@ services:
 	assert.Contains(t, err.Error(), "at least one upstream is required")
 }
 
+func TestLoad_DuplicateName(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+services:
+  - name: svc
+    prefix: /a
+    upstreams: [http://localhost:8081]
+  - name: svc
+    prefix: /b
+    upstreams: [http://localhost:8082]
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate name")
+}
+
 func TestLoad_DuplicatePrefix(t *testing.T) {
 	_, err := Load(writeConfig(t, `
 services:
