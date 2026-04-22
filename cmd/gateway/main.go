@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"flag"
 	"fmt"
@@ -87,7 +88,13 @@ func main() {
 	))
 	r.Use(middleware.ConcurrencyLimit(cfg.MaxInFlight))
 
-	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	edgeLimiter := ratelimit.NewMemoryLimiter(ctx, "", rate.Limit(10), 20, time.Minute, 3*time.Minute)
+	edgeRateLimit := middleware.RateLimit(edgeLimiter, middleware.KeyByIP, logger)
+	r.NotFound(edgeRateLimit(notFoundHandler()).ServeHTTP)
+	r.MethodNotAllowed(edgeRateLimit(methodNotAllowedHandler()).ServeHTTP)
+
+	r.With(edgeRateLimit).Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -288,6 +295,24 @@ func buildServiceHandler(
 	}
 
 	return proxy.NewHandler(lb, breakers, tc, logger)
+}
+
+func notFoundHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "not found"})
+	}
+}
+
+func methodNotAllowedHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+	}
 }
 
 func loadPublicKey(path string) (*rsa.PublicKey, error) {
