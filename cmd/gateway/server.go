@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 
 	"go-api-gateway/internal/circuitbreaker"
@@ -69,14 +70,19 @@ func buildRouter(ctx context.Context, cfg *config.GatewayConfig, logger *slog.Lo
 		return nil, fmt.Errorf("building redis client: %w", err)
 	}
 
-	checkers := make([]*health.Checker, 0, len(cfg.Services))
+	type serviceCheck struct {
+		name    string
+		checker *health.Checker
+	}
+	checks := make([]serviceCheck, 0, len(cfg.Services))
+
 	for _, svc := range cfg.Services {
 		if svc.Auth && publicKey == nil {
 			return nil, fmt.Errorf("service %q requires auth but JWT_PUBLIC_KEY_PATH is not set", svc.Name)
 		}
 
 		handler, checker := buildServiceHandler(svc, cfg, logger)
-		checkers = append(checkers, checker)
+		checks = append(checks, serviceCheck{name: svc.Name, checker: checker})
 
 		limiter, keyFunc, err := buildServiceLimiter(ctx, svc, cfg, redisClient)
 		if err != nil {
@@ -103,8 +109,24 @@ func buildRouter(ctx context.Context, cfg *config.GatewayConfig, logger *slog.Lo
 		)
 	}
 
-	for _, c := range checkers {
-		c.Start(ctx)
+	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	g, gctx := errgroup.WithContext(probeCtx)
+
+	for _, sc := range checks {
+		g.Go(func() error {
+			if err := sc.checker.Probe(gctx); err != nil {
+				return fmt.Errorf("service %q: %w", sc.name, err)
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, fmt.Errorf("startup probe: %w", err)
+	}
+
+	for _, sc := range checks {
+		sc.checker.Start(ctx)
 	}
 
 	return r, nil

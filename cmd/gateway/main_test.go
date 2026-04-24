@@ -15,19 +15,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func minimalConfig() *config.GatewayConfig {
+func healthyUpstream(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func minimalConfig(upstream string) *config.GatewayConfig {
 	return &config.GatewayConfig{
 		HealthCheck: config.HealthCheckConfig{Interval: time.Second, Path: "/healthz"},
 		Services: []config.ServiceConfig{{
 			Name:      "svc",
 			Prefix:    "/svc",
-			Upstreams: []string{"http://localhost:8081"},
+			Upstreams: []string{upstream},
 		}},
 	}
 }
 
 func TestBuildRouter_HealthzRegistered(t *testing.T) {
-	router, err := buildRouter(context.Background(), minimalConfig(), slog.Default())
+	router, err := buildRouter(context.Background(), minimalConfig(healthyUpstream(t)), slog.Default())
 	require.NoError(t, err)
 
 	rec := httptest.NewRecorder()
@@ -39,7 +48,7 @@ func TestBuildRouter_HealthzRegistered(t *testing.T) {
 }
 
 func TestBuildRouter_NotFoundReturnsJSON(t *testing.T) {
-	router, err := buildRouter(context.Background(), minimalConfig(), slog.Default())
+	router, err := buildRouter(context.Background(), minimalConfig(healthyUpstream(t)), slog.Default())
 	require.NoError(t, err)
 
 	rec := httptest.NewRecorder()
@@ -56,7 +65,7 @@ func TestBuildRouter_NotFoundReturnsJSON(t *testing.T) {
 }
 
 func TestBuildRouter_MethodNotAllowedReturnsJSON(t *testing.T) {
-	router, err := buildRouter(context.Background(), minimalConfig(), slog.Default())
+	router, err := buildRouter(context.Background(), minimalConfig(healthyUpstream(t)), slog.Default())
 	require.NoError(t, err)
 
 	rec := httptest.NewRecorder()
@@ -82,27 +91,31 @@ func TestBuildRouter_ServicePrefixStripped(t *testing.T) {
 	}))
 	t.Cleanup(upstream.Close)
 
-	cfg := minimalConfig()
-	cfg.Services[0].Upstreams = []string{upstream.URL}
-
+	cfg := minimalConfig(upstream.URL)
 	router, err := buildRouter(context.Background(), cfg, slog.Default())
 	require.NoError(t, err)
 
-	// Wait for the health checker's first tick to mark the upstream healthy.
-	require.Eventually(t, func() bool {
-		rec := httptest.NewRecorder()
-		req := httptest.NewRequest("GET", "/svc/ping", nil)
-		router.ServeHTTP(rec, req)
-		return rec.Code == http.StatusTeapot
-	}, 2*time.Second, 20*time.Millisecond)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/svc/ping", nil)
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusTeapot, rec.Code)
 }
 
 func TestBuildRouter_AuthServiceRequiresPublicKey(t *testing.T) {
-	cfg := minimalConfig()
+	cfg := minimalConfig(healthyUpstream(t))
 	cfg.Services[0].Auth = true
-
 	_, err := buildRouter(context.Background(), cfg, slog.Default())
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "requires auth")
+}
+
+func TestBuildRouter_FailsWhenAllUpstreamsDown(t *testing.T) {
+	cfg := minimalConfig("http://127.0.0.1:1")
+	_, err := buildRouter(context.Background(), cfg, slog.Default())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "startup probe")
+	assert.Contains(t, err.Error(), "svc")
 }
