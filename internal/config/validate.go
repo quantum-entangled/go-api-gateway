@@ -79,6 +79,10 @@ func validate(cfg *GatewayConfig) error {
 		cfg.HealthCheck.Interval = 5 * time.Second
 	}
 
+	if cfg.Compression.Enabled && cfg.Compression.MinBytes <= 0 {
+		cfg.Compression.MinBytes = 1024
+	}
+
 	if cfg.MaxBodyBytes <= 0 {
 		cfg.MaxBodyBytes = 1 << 20 // 1 MB
 	}

@@ -1,6 +1,10 @@
 port: 8080
 max_in_flight: 300
 
+compression:
+  enabled: true
+  min_bytes: 1024
+
 rate_limit:
   enabled: true
   backend: redis

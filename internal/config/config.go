@@ -14,6 +14,7 @@ type GatewayConfig struct {
 	MaxBodyBytes   int64             `yaml:"max_body_bytes"`
 	MaxHeaderBytes int               `yaml:"max_header_bytes"`
 	MaxInFlight    int               `yaml:"max_in_flight"`
+	Compression    CompressionConfig `yaml:"compression"`
 	RateLimit      RateLimitConfig   `yaml:"rate_limit"`
 	HealthCheck    HealthCheckConfig `yaml:"health_check"`
 	CircuitBreaker CBConfig          `yaml:"circuit_breaker"`
@@ -55,6 +56,12 @@ type RedisConfig struct {
 	DialTimeout  time.Duration `yaml:"dial_timeout"`
 	ReadTimeout  time.Duration `yaml:"read_timeout"`
 	WriteTimeout time.Duration `yaml:"write_timeout"`
+}
+
+// CompressionConfig controls gzip encoding of responses on service routes.
+type CompressionConfig struct {
+	Enabled  bool `yaml:"enabled"`
+	MinBytes int  `yaml:"min_bytes"`
 }
 
 // HealthCheckConfig controls upstream health polling.

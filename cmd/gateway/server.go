@@ -96,6 +96,9 @@ func buildRouter(ctx context.Context, cfg *config.GatewayConfig, logger *slog.Lo
 			if limiter != nil {
 				r.Use(middleware.RateLimit(limiter, keyFunc, logger))
 			}
+			if cfg.Compression.Enabled {
+				r.Use(middleware.Compress(cfg.Compression.MinBytes))
+			}
 			r.Mount("/", http.StripPrefix(svc.Prefix, handler))
 		})
 

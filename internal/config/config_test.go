@@ -432,6 +432,44 @@ services:
 	assert.Contains(t, err.Error(), "requires auth: true")
 }
 
+func TestLoad_CompressionRoundTrip(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+compression:
+  enabled: true
+  min_bytes: 2048
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.NoError(t, err)
+	assert.True(t, cfg.Compression.Enabled)
+	assert.Equal(t, 2048, cfg.Compression.MinBytes)
+}
+
+func TestLoad_CompressionDefaultMinBytes(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+compression:
+  enabled: true
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.NoError(t, err)
+	assert.True(t, cfg.Compression.Enabled)
+	assert.Equal(t, 1024, cfg.Compression.MinBytes)
+}
+
+func TestLoad_CompressionDisabledByDefault(t *testing.T) {
+	cfg, err := Load(writeConfig(t, minimalServiceConfig))
+
+	require.NoError(t, err)
+	assert.False(t, cfg.Compression.Enabled)
+}
+
 func TestLoad_DisabledCircuitBreakerSkipsValidation(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 circuit_breaker:
