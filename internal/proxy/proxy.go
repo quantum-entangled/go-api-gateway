@@ -105,9 +105,8 @@ func NewHandler(lb LoadBalancer, breakers map[string]*circuitbreaker.Breaker, tc
 			breaker.RecordFailure()
 			h.logger.Error("proxy", "error", err)
 
-			jsonError(w, http.StatusBadGateway, map[string]string{
-				"error": "upstream unavailable",
-			})
+			status, msg := classifyProxyError(err)
+			jsonError(w, status, map[string]string{"error": msg})
 		},
 	}
 
@@ -173,6 +172,17 @@ func newUpstreamTransport(tc TransportConfig) *http.Transport {
 		ExpectContinueTimeout: 1 * time.Second,
 		ForceAttemptHTTP2:     true,
 	}
+}
+
+func classifyProxyError(err error) (int, string) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return http.StatusGatewayTimeout, "upstream timeout"
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return http.StatusGatewayTimeout, "upstream timeout"
+	}
+	return http.StatusBadGateway, "upstream unavailable"
 }
 
 func jsonError(w http.ResponseWriter, status int, msg map[string]string) {

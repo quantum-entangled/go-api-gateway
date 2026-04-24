@@ -1,6 +1,7 @@
 package proxy_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -136,10 +137,11 @@ func TestHandler_RecordsFailureOn5xx(t *testing.T) {
 	breakers := newBreakers(upstream.URL, maxFailures)
 
 	h := proxy.NewHandler(lb, breakers, testTransport, slog.Default())
-	rec := httptest.NewRecorder()
+	var rec *httptest.ResponseRecorder
 	req := httptest.NewRequest("GET", "/", nil)
 
 	for range maxFailures {
+		rec = httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
 
@@ -170,12 +172,38 @@ func TestHandler_RecordsFailureOnConnectionError(t *testing.T) {
 	breakers := newBreakers(unreachableURL, maxFailures)
 
 	h := proxy.NewHandler(lb, breakers, testTransport, slog.Default())
-	rec := httptest.NewRecorder()
+	var rec *httptest.ResponseRecorder
 	req := httptest.NewRequest("GET", "/", nil)
 
 	for range maxFailures {
+		rec = httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 	}
 
 	assert.Equal(t, "open", breakers[unreachableURL].State())
+	assert.Equal(t, http.StatusBadGateway, rec.Code)
+	body := decodeJSON(t, rec)
+	assert.Equal(t, "upstream unavailable", body["error"])
+}
+
+func TestHandler_UpstreamTimeoutReturns504(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	t.Cleanup(upstream.Close)
+
+	lb := &mockLB{url: upstream.URL}
+	breakers := newBreakers(upstream.URL, 3)
+
+	h := proxy.NewHandler(lb, breakers, testTransport, slog.Default())
+	rec := httptest.NewRecorder()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	t.Cleanup(cancel)
+	req := httptest.NewRequest("GET", "/", nil).WithContext(ctx)
+
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusGatewayTimeout, rec.Code)
+	body := decodeJSON(t, rec)
+	assert.Equal(t, "upstream timeout", body["error"])
 }
