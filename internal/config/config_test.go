@@ -470,6 +470,81 @@ func TestLoad_CompressionDisabledByDefault(t *testing.T) {
 	assert.False(t, cfg.Compression.Enabled)
 }
 
+func TestLoad_ServiceCacheRoundTrip(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+    cache:
+      ttl: 30s
+      max_entries: 512
+      max_bytes: 4194304
+`))
+
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Services[0].Cache)
+	assert.Equal(t, 30*time.Second, cfg.Services[0].Cache.TTL)
+	assert.Equal(t, 512, cfg.Services[0].Cache.MaxEntries)
+	assert.Equal(t, 4194304, cfg.Services[0].Cache.MaxBytes)
+}
+
+func TestLoad_ServiceCacheDefaults(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+    cache: {}
+`))
+
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Services[0].Cache)
+	assert.Equal(t, 60*time.Second, cfg.Services[0].Cache.TTL)
+	assert.Equal(t, 1024, cfg.Services[0].Cache.MaxEntries)
+	assert.Equal(t, 16<<20, cfg.Services[0].Cache.MaxBytes)
+}
+
+func TestLoad_TransportRoundTrip(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+transport:
+  max_idle_conns: 500
+  max_idle_conns_per_host: 50
+  idle_conn_timeout: 30s
+  dial_timeout: 2s
+  tls_handshake_timeout: 3s
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.NoError(t, err)
+	assert.Equal(t, 500, cfg.Transport.MaxIdleConns)
+	assert.Equal(t, 50, cfg.Transport.MaxIdleConnsPerHost)
+	assert.Equal(t, 30*time.Second, cfg.Transport.IdleConnTimeout)
+	assert.Equal(t, 2*time.Second, cfg.Transport.DialTimeout)
+	assert.Equal(t, 3*time.Second, cfg.Transport.TLSHandshakeTimeout)
+}
+
+func TestLoad_TransportDefaults(t *testing.T) {
+	cfg, err := Load(writeConfig(t, minimalServiceConfig))
+
+	require.NoError(t, err)
+	assert.Equal(t, 1000, cfg.Transport.MaxIdleConns)
+	assert.Equal(t, 200, cfg.Transport.MaxIdleConnsPerHost)
+	assert.Equal(t, 90*time.Second, cfg.Transport.IdleConnTimeout)
+	assert.Equal(t, 5*time.Second, cfg.Transport.DialTimeout)
+	assert.Equal(t, 5*time.Second, cfg.Transport.TLSHandshakeTimeout)
+}
+
+func TestLoad_ServiceCacheAbsentByDefault(t *testing.T) {
+	cfg, err := Load(writeConfig(t, minimalServiceConfig))
+
+	require.NoError(t, err)
+	assert.Nil(t, cfg.Services[0].Cache)
+}
+
 func TestLoad_DisabledCircuitBreakerSkipsValidation(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 circuit_breaker:

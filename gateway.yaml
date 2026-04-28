@@ -29,6 +29,10 @@ services:
       - http://catalog:8080
       - http://catalog-2:8080
     auth: false
+    cache:
+      ttl: 60s
+      max_entries: 1024
+      max_bytes: 16777216
 
   - name: orders
     prefix: /orders

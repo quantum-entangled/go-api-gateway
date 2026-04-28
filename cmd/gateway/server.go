@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 
+	"go-api-gateway/internal/cache"
 	"go-api-gateway/internal/circuitbreaker"
 	"go-api-gateway/internal/config"
 	"go-api-gateway/internal/health"
@@ -96,6 +97,10 @@ func buildRouter(ctx context.Context, cfg *config.GatewayConfig, logger *slog.Lo
 			if limiter != nil {
 				r.Use(middleware.RateLimit(limiter, keyFunc, logger))
 			}
+			if svc.Cache != nil {
+				lru := cache.NewLRU(svc.Cache.MaxEntries, svc.Cache.MaxBytes)
+				r.Use(middleware.Cache(lru, middleware.CacheConfig{TTL: svc.Cache.TTL}))
+			}
 			if cfg.Compression.Enabled {
 				r.Use(middleware.Compress(cfg.Compression.MinBytes))
 			}
@@ -109,6 +114,7 @@ func buildRouter(ctx context.Context, cfg *config.GatewayConfig, logger *slog.Lo
 			"upstreams", svc.Upstreams,
 			"auth", svc.Auth,
 			"rate_limited", limiter != nil,
+			"cached", svc.Cache != nil,
 		)
 	}
 

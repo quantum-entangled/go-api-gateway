@@ -84,6 +84,7 @@ type ServiceConfig struct {
 	Upstreams []string                `yaml:"upstreams"`
 	Auth      bool                    `yaml:"auth"`
 	RateLimit *ServiceRateLimitConfig `yaml:"rate_limit,omitempty"`
+	Cache     *ServiceCacheConfig     `yaml:"cache,omitempty"`
 }
 
 // ServiceRateLimitConfig overrides the global rate limit for a service.
@@ -92,6 +93,15 @@ type ServiceRateLimitConfig struct {
 	Rate  float64 `yaml:"rate"`
 	Burst int     `yaml:"burst"`
 	KeyBy string  `yaml:"key_by"`
+}
+
+// ServiceCacheConfig opts a service into in-memory response caching.
+// TTL is the default expiry; upstream Cache-Control max-age overrides it.
+// MaxEntries and MaxBytes bound the LRU; eviction kicks in past either.
+type ServiceCacheConfig struct {
+	TTL        time.Duration `yaml:"ttl"`
+	MaxEntries int           `yaml:"max_entries"`
+	MaxBytes   int           `yaml:"max_bytes"`
 }
 
 // Load reads gateway configuration from the given YAML file path and

@@ -88,7 +88,7 @@ Client to gateway:
 
 ### Gateway features on during the test
 
-Request ID, structured logging, 1 MB body limit, panic recovery, JWT validation on `/orders/*`, health checks, round-robin load balancer across the two replicas per service, circuit breaker (3 failures / 10s), global concurrency-limit middleware, OTel metrics, traces, logs. The rate limiter and response compression are off, so these numbers are the raw proxy-path ceiling.
+Request ID, structured logging, 1 MB body limit, panic recovery, JWT validation on `/orders/*`, health checks, round-robin load balancer across the two replicas per service, circuit breaker (3 failures / 10s), global concurrency-limit middleware, OTel metrics, traces, logs. The rate limiter, response compression, and per-service caching are off, so these numbers are the raw proxy-path ceiling.
 
 ## Reading the numbers
 

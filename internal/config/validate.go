@@ -34,6 +34,9 @@ func validate(cfg *GatewayConfig) error {
 		if err := validateServiceRateLimit(svc); err != nil {
 			return err
 		}
+		if err := validateServiceCache(svc); err != nil {
+			return err
+		}
 	}
 
 	if cfg.RateLimit.Enabled {
@@ -106,6 +109,23 @@ func validate(cfg *GatewayConfig) error {
 		cfg.Transport.TLSHandshakeTimeout = 5 * time.Second
 	}
 
+	return nil
+}
+
+func validateServiceCache(svc ServiceConfig) error {
+	cc := svc.Cache
+	if cc == nil {
+		return nil
+	}
+	if cc.TTL <= 0 {
+		cc.TTL = 60 * time.Second
+	}
+	if cc.MaxEntries <= 0 {
+		cc.MaxEntries = 1024
+	}
+	if cc.MaxBytes <= 0 {
+		cc.MaxBytes = 16 << 20 // 16 MB
+	}
 	return nil
 }
 
