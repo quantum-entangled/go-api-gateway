@@ -49,7 +49,7 @@ func NewMetrics(meter metric.Meter) (*Metrics, error) {
 func (m *Metrics) Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+			rw := &metricsWriter{ResponseWriter: w, status: http.StatusOK}
 
 			start := time.Now()
 			next.ServeHTTP(rw, r)
@@ -71,12 +71,12 @@ func (m *Metrics) Middleware() func(http.Handler) http.Handler {
 	}
 }
 
-type responseWriter struct {
+type metricsWriter struct {
 	http.ResponseWriter
 	status int
 }
 
-func (rw *responseWriter) WriteHeader(code int) {
+func (rw *metricsWriter) WriteHeader(code int) {
 	rw.status = code
 	rw.ResponseWriter.WriteHeader(code)
 }

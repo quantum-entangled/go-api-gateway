@@ -6,20 +6,20 @@ import (
 	"time"
 )
 
-type responseWriter struct {
+type loggerWriter struct {
 	http.ResponseWriter
 	status int
 	bytes  int
 }
 
 // WriteHeader captures the status code and delegates to the wrapped ResponseWriter.
-func (rw *responseWriter) WriteHeader(code int) {
+func (rw *loggerWriter) WriteHeader(code int) {
 	rw.status = code
 	rw.ResponseWriter.WriteHeader(code)
 }
 
 // Write captures the number of bytes written and delegates to the wrapped ResponseWriter.
-func (rw *responseWriter) Write(b []byte) (int, error) {
+func (rw *loggerWriter) Write(b []byte) (int, error) {
 	n, err := rw.ResponseWriter.Write(b)
 	rw.bytes += n
 	return n, err
@@ -31,7 +31,7 @@ func Logger(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			startTime := time.Now()
-			rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+			rw := &loggerWriter{ResponseWriter: w, status: http.StatusOK}
 
 			next.ServeHTTP(rw, r)
 

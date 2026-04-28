@@ -9,6 +9,16 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+type tracingWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rw *tracingWriter) WriteHeader(code int) {
+	rw.status = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
 // Tracing returns middleware that creates a server span for every incoming
 // request. It extracts any incoming trace context from headers, starts a
 // span, and annotates it with method, path, and status after the handler
@@ -20,7 +30,7 @@ func Tracing(tracer trace.Tracer, propagator propagation.TextMapPropagator) func
 			ctx, span := tracer.Start(ctx, "request", trace.WithSpanKind(trace.SpanKindServer))
 			defer span.End()
 
-			rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+			rw := &tracingWriter{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rw, r.WithContext(ctx))
 
 			span.SetAttributes(
