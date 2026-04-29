@@ -7,7 +7,7 @@ import (
 
 // MaxBody caps incoming request body size. Requests with a Content-Length over
 // the limit are rejected with 413 before reaching the handler. Streamed or
-// chunked bodies are capped via http.MaxBytesReader as they're read; downstream
+// chunked bodies are capped via http.MaxBytesReader as they're read. Downstream
 // handlers should translate *http.MaxBytesError into 413.
 func MaxBody(limit int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

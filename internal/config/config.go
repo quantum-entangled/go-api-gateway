@@ -88,7 +88,7 @@ type ServiceConfig struct {
 }
 
 // ServiceRateLimitConfig overrides the global rate limit for a service.
-// KeyBy is "ip" or "jwt_sub"; jwt_sub requires Auth: true on the service.
+// KeyBy is "ip" or "jwt_sub". jwt_sub requires Auth: true on the service.
 type ServiceRateLimitConfig struct {
 	Rate  float64 `yaml:"rate"`
 	Burst int     `yaml:"burst"`
@@ -96,8 +96,8 @@ type ServiceRateLimitConfig struct {
 }
 
 // ServiceCacheConfig opts a service into in-memory response caching.
-// TTL is the default expiry; upstream Cache-Control max-age overrides it.
-// MaxEntries and MaxBytes bound the LRU; eviction kicks in past either.
+// TTL is the default expiry, upstream Cache-Control max-age overrides it.
+// MaxEntries and MaxBytes bound the LRU, eviction kicks in past either.
 type ServiceCacheConfig struct {
 	TTL        time.Duration `yaml:"ttl"`
 	MaxEntries int           `yaml:"max_entries"`
