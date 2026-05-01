@@ -1,5 +1,5 @@
 // gentoken prints a signed JWT to stdout for use in load tests.
-// Usage: go run ./cmd/gentoken -key ../../dev.key
+// Usage: go run ./cmd/gentoken -key ../../example.key
 package main
 
 import (
@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	keyPath := flag.String("key", "../../dev.key", "path to RSA private key")
+	keyPath := flag.String("key", "../../example.key", "path to RSA private key")
 	sub := flag.String("sub", "550e8400-e29b-41d4-a716-446655440000", "JWT subject")
 	flag.Parse()
 

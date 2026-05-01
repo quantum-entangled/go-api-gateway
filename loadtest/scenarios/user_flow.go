@@ -71,7 +71,7 @@ func (s *stats) snapshot() (latencies []time.Duration, codes map[int]int64, erro
 
 func main() {
 	gateway := flag.String("gateway", "http://localhost:8080", "gateway base URL")
-	keyPath := flag.String("key", "dev.key", "path to RSA private key")
+	keyPath := flag.String("key", "example.key", "path to RSA private key")
 	users := flag.Int("users", 10, "concurrent simulated users")
 	duration := flag.Duration("duration", 30*time.Second, "test duration")
 	think := flag.Duration("think", 300*time.Millisecond, "average think time between flows")

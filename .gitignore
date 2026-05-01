@@ -9,6 +9,14 @@ cover.html
 # Load test results
 loadtest/vegeta/results/
 
+# Local environment
+.env*
+!.env.example
+*.key
+*.pem
+!example.key
+!example.pem
+
 # IDE
 .idea/
 .vscode/

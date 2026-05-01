@@ -136,10 +136,10 @@ services:
       - "${GATEWAY_PORT}:${GATEWAY_PORT}"
     volumes:
       - ${GATEWAY_CONFIG:-./gateway.yaml}:/etc/gateway/gateway.yaml:ro
-      - ./dev.pem:/etc/gateway/dev.pem:ro
+      - ./example.pem:/etc/gateway/example.pem:ro
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
-      JWT_PUBLIC_KEY_PATH: /etc/gateway/dev.pem
+      JWT_PUBLIC_KEY_PATH: /etc/gateway/example.pem
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     command: [ "-config", "/etc/gateway/gateway.yaml" ]
     depends_on:

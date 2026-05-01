@@ -17,7 +17,7 @@
 #
 # Environment:
 #   GATEWAY    gateway base URL    (default: http://localhost:8080)
-#   KEY_PATH   RSA private key     (default: $PROJECT_ROOT/dev.key)
+#   KEY_PATH   RSA private key     (default: $PROJECT_ROOT/example.key)
 #   VEGETA     vegeta binary path  (default: vegeta)
 
 set -euo pipefail
@@ -30,7 +30,7 @@ RESULTS_DIR="${SCRIPT_DIR}/results"
 mkdir -p "$RESULTS_DIR"
 
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-TOKEN=$(cd "$SCRIPT_DIR/.." && go run ./cmd/gentoken -key "${KEY_PATH:-$PROJECT_ROOT/dev.key}")
+TOKEN=$(cd "$SCRIPT_DIR/.." && go run ./cmd/gentoken -key "${KEY_PATH:-$PROJECT_ROOT/example.key}")
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 
 max=500 step=50 step_dur=10s start=50 conns=100
