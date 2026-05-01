@@ -100,9 +100,9 @@ func extractClaims(token *jwt.Token) (*Claims, error) {
 	return nil, fmt.Errorf("cannot extract claims from token")
 }
 
-// RequireRole checks that the authenticated user has the specified role.
-// Must be used after JWTAuth in the middleware chain.
-func RequireRole(role string) func(http.Handler) http.Handler {
+// RequireAnyRole admits the request if the authenticated user holds at
+// least one of the given roles. Must be used after JWTAuth.
+func RequireAnyRole(roles []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims, ok := ClaimsFromContext(r.Context())
@@ -110,13 +110,13 @@ func RequireRole(role string) func(http.Handler) http.Handler {
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing token"})
 				return
 			}
-
-			if !slices.Contains(claims.Roles, role) {
-				writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
-				return
+			for _, want := range roles {
+				if slices.Contains(claims.Roles, want) {
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
-
-			next.ServeHTTP(w, r)
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 		})
 	}
 }

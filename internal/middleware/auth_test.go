@@ -120,14 +120,14 @@ func TestJWTAuth_MalformedHeader(t *testing.T) {
 	assert.Contains(t, body, "missing token")
 }
 
-func TestRequireRole_Allowed(t *testing.T) {
+func TestRequireAnyRole_Allowed(t *testing.T) {
 	tokenStr := signToken(t, jwt.MapClaims{
 		"sub":   "user1",
 		"roles": []string{"admin"},
 		"exp":   time.Now().Add(time.Hour).Unix(),
 	})
 
-	handler := middleware.JWTAuth(&testKey.PublicKey)(middleware.RequireRole("admin")(okHandler()))
+	handler := middleware.JWTAuth(&testKey.PublicKey)(middleware.RequireAnyRole([]string{"admin"})(okHandler()))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tokenStr)
@@ -136,14 +136,30 @@ func TestRequireRole_Allowed(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
-func TestRequireRole_Forbidden(t *testing.T) {
+func TestRequireAnyRole_AllowedWhenSecondMatches(t *testing.T) {
+	tokenStr := signToken(t, jwt.MapClaims{
+		"sub":   "user1",
+		"roles": []string{"ops"},
+		"exp":   time.Now().Add(time.Hour).Unix(),
+	})
+
+	handler := middleware.JWTAuth(&testKey.PublicKey)(middleware.RequireAnyRole([]string{"admin", "ops"})(okHandler()))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenStr)
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestRequireAnyRole_Forbidden(t *testing.T) {
 	tokenStr := signToken(t, jwt.MapClaims{
 		"sub":   "user1",
 		"roles": []string{"reader"},
 		"exp":   time.Now().Add(time.Hour).Unix(),
 	})
 
-	handler := middleware.JWTAuth(&testKey.PublicKey)(middleware.RequireRole("admin")(okHandler()))
+	handler := middleware.JWTAuth(&testKey.PublicKey)(middleware.RequireAnyRole([]string{"admin", "ops"})(okHandler()))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tokenStr)

@@ -15,9 +15,9 @@ type GatewayConfig struct {
 	MaxHeaderBytes int               `yaml:"max_header_bytes"`
 	MaxInFlight    int               `yaml:"max_in_flight"`
 	Compression    CompressionConfig `yaml:"compression"`
-	RateLimit      RateLimitConfig   `yaml:"rate_limit"`
+	RateLimit      *RateLimitConfig  `yaml:"rate_limit"`
 	HealthCheck    HealthCheckConfig `yaml:"health_check"`
-	CircuitBreaker CBConfig          `yaml:"circuit_breaker"`
+	CircuitBreaker *CBConfig         `yaml:"circuit_breaker"`
 	Transport      TransportConfig   `yaml:"transport"`
 	Services       []ServiceConfig   `yaml:"services"`
 
@@ -39,7 +39,6 @@ type TransportConfig struct {
 // RateLimitConfig controls the global rate limiter.
 // Backend selects memory (per-process) or redis (shared across instances).
 type RateLimitConfig struct {
-	Enabled         bool          `yaml:"enabled"`
 	Backend         string        `yaml:"backend"`
 	Rate            float64       `yaml:"rate"`
 	Burst           int           `yaml:"burst"`
@@ -72,19 +71,20 @@ type HealthCheckConfig struct {
 
 // CBConfig controls circuit breakers wrapping upstream calls.
 type CBConfig struct {
-	Enabled     bool          `yaml:"enabled"`
 	MaxFailures int           `yaml:"max_failures"`
 	Timeout     time.Duration `yaml:"timeout"`
 }
 
 // ServiceConfig defines a single backend service the gateway proxies to.
+// RequiredRoles uses OR semantics: any matching role grants access.
 type ServiceConfig struct {
-	Name      string                  `yaml:"name"`
-	Prefix    string                  `yaml:"prefix"`
-	Upstreams []string                `yaml:"upstreams"`
-	Auth      bool                    `yaml:"auth"`
-	RateLimit *ServiceRateLimitConfig `yaml:"rate_limit,omitempty"`
-	Cache     *ServiceCacheConfig     `yaml:"cache,omitempty"`
+	Name          string                  `yaml:"name"`
+	Prefix        string                  `yaml:"prefix"`
+	Upstreams     []string                `yaml:"upstreams"`
+	Auth          bool                    `yaml:"auth"`
+	RequiredRoles []string                `yaml:"required_roles"`
+	RateLimit     *ServiceRateLimitConfig `yaml:"rate_limit"`
+	Cache         *ServiceCacheConfig     `yaml:"cache"`
 }
 
 // ServiceRateLimitConfig overrides the global rate limit for a service.

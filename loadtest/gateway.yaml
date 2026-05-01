@@ -1,15 +1,11 @@
 port: 8080
 max_in_flight: 300
 
-rate_limit:
-  enabled: false
-
 health_check:
   interval: 5s
   path: /healthz
 
 circuit_breaker:
-  enabled: true
   max_failures: 3
   timeout: 10s
 

@@ -24,7 +24,6 @@ max_header_bytes: 16384
 max_in_flight: 300
 
 rate_limit:
-  enabled: true
   rate: 10
   burst: 20
   cleanup_interval: 1m
@@ -35,7 +34,6 @@ health_check:
   path: /healthz
 
 circuit_breaker:
-  enabled: true
   max_failures: 3
   timeout: 10s
 
@@ -63,7 +61,7 @@ services:
 
 func TestLoad(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "otel:4318")
-	t.Setenv("JWT_PUBLIC_KEY_PATH", "/keys/dev.pem")
+	t.Setenv("JWT_PUBLIC_KEY_PATH", "/keys/example.pem")
 
 	cfg, err := Load(writeConfig(t, validConfig))
 	require.NoError(t, err)
@@ -73,13 +71,13 @@ func TestLoad(t *testing.T) {
 	assert.Equal(t, 16384, cfg.MaxHeaderBytes)
 	assert.Equal(t, 300, cfg.MaxInFlight)
 	assert.Equal(t, "otel:4318", cfg.OTelEndpoint)
-	assert.Equal(t, "/keys/dev.pem", cfg.JWTPublicKey)
+	assert.Equal(t, "/keys/example.pem", cfg.JWTPublicKey)
 
-	assert.True(t, cfg.RateLimit.Enabled)
+	require.NotNil(t, cfg.RateLimit)
 	assert.Equal(t, 10.0, cfg.RateLimit.Rate)
 	assert.Equal(t, 20, cfg.RateLimit.Burst)
 
-	assert.True(t, cfg.CircuitBreaker.Enabled)
+	require.NotNil(t, cfg.CircuitBreaker)
 	assert.Equal(t, 3, cfg.CircuitBreaker.MaxFailures)
 
 	require.Len(t, cfg.Services, 2)
@@ -202,7 +200,6 @@ services:
 func TestLoad_RateLimitInvalid(t *testing.T) {
 	_, err := Load(writeConfig(t, `
 rate_limit:
-  enabled: true
   rate: 0
   burst: 10
 services:
@@ -218,7 +215,6 @@ services:
 func TestLoad_CircuitBreakerInvalid(t *testing.T) {
 	_, err := Load(writeConfig(t, `
 circuit_breaker:
-  enabled: true
   max_failures: 0
   timeout: 10s
 services:
@@ -234,7 +230,6 @@ services:
 func TestLoad_RateLimitDefaultBackendIsMemory(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 rate_limit:
-  enabled: true
   rate: 10
   burst: 20
 services:
@@ -244,6 +239,7 @@ services:
 `))
 
 	require.NoError(t, err)
+	require.NotNil(t, cfg.RateLimit)
 	assert.Equal(t, "memory", cfg.RateLimit.Backend)
 	assert.Positive(t, cfg.RateLimit.CleanupInterval)
 	assert.Positive(t, cfg.RateLimit.CleanupMaxIdle)
@@ -252,7 +248,6 @@ services:
 func TestLoad_RateLimitRedisRequiresAddr(t *testing.T) {
 	_, err := Load(writeConfig(t, `
 rate_limit:
-  enabled: true
   backend: redis
   rate: 10
   burst: 20
@@ -269,7 +264,6 @@ services:
 func TestLoad_RateLimitUnknownBackend(t *testing.T) {
 	_, err := Load(writeConfig(t, `
 rate_limit:
-  enabled: true
   backend: dynamodb
   rate: 10
   burst: 20
@@ -286,7 +280,6 @@ services:
 func TestLoad_RateLimitRedisOptionsRoundTrip(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 rate_limit:
-  enabled: true
   backend: redis
   rate: 10
   burst: 20
@@ -303,6 +296,7 @@ services:
 `))
 
 	require.NoError(t, err)
+	require.NotNil(t, cfg.RateLimit)
 	assert.Equal(t, "redis:6379", cfg.RateLimit.Redis.Addr)
 	assert.Equal(t, 42, cfg.RateLimit.Redis.PoolSize)
 	assert.Equal(t, 2*time.Second, cfg.RateLimit.Redis.DialTimeout)
@@ -319,19 +313,11 @@ func TestLoad_RedisPasswordFromEnv(t *testing.T) {
 	assert.Equal(t, "s3cret", cfg.RedisPassword)
 }
 
-func TestLoad_DisabledRateLimitSkipsValidation(t *testing.T) {
-	cfg, err := Load(writeConfig(t, `
-rate_limit:
-  enabled: false
-  rate: 0
-services:
-  - name: svc
-    prefix: /svc
-    upstreams: [http://localhost:8081]
-`))
+func TestLoad_OmittedRateLimitIsNil(t *testing.T) {
+	cfg, err := Load(writeConfig(t, minimalServiceConfig))
 
 	require.NoError(t, err)
-	assert.False(t, cfg.RateLimit.Enabled)
+	assert.Nil(t, cfg.RateLimit)
 }
 
 func TestLoad_ServiceRateLimitOverride(t *testing.T) {
@@ -430,6 +416,34 @@ services:
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "requires auth: true")
+}
+
+func TestLoad_ServiceRequiredRolesRoundTrip(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+services:
+  - name: orders
+    prefix: /orders
+    upstreams: [http://localhost:8081]
+    auth: true
+    required_roles: [admin, ops]
+`))
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"admin", "ops"}, cfg.Services[0].RequiredRoles)
+}
+
+func TestLoad_ServiceRequiredRolesRequiresAuth(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+services:
+  - name: orders
+    prefix: /orders
+    upstreams: [http://localhost:8081]
+    auth: false
+    required_roles: [admin]
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "required_roles requires auth: true")
 }
 
 func TestLoad_CompressionRoundTrip(t *testing.T) {
@@ -545,17 +559,9 @@ func TestLoad_ServiceCacheAbsentByDefault(t *testing.T) {
 	assert.Nil(t, cfg.Services[0].Cache)
 }
 
-func TestLoad_DisabledCircuitBreakerSkipsValidation(t *testing.T) {
-	cfg, err := Load(writeConfig(t, `
-circuit_breaker:
-  enabled: false
-  max_failures: 0
-services:
-  - name: svc
-    prefix: /svc
-    upstreams: [http://localhost:8081]
-`))
+func TestLoad_OmittedCircuitBreakerIsNil(t *testing.T) {
+	cfg, err := Load(writeConfig(t, minimalServiceConfig))
 
 	require.NoError(t, err)
-	assert.False(t, cfg.CircuitBreaker.Enabled)
+	assert.Nil(t, cfg.CircuitBreaker)
 }

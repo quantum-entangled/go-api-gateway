@@ -94,6 +94,9 @@ func buildRouter(ctx context.Context, cfg *config.GatewayConfig, logger *slog.Lo
 			if svc.Auth {
 				r.Use(middleware.JWTAuth(publicKey))
 			}
+			if len(svc.RequiredRoles) > 0 {
+				r.Use(middleware.RequireAnyRole(svc.RequiredRoles))
+			}
 			if limiter != nil {
 				r.Use(middleware.RateLimit(limiter, keyFunc, logger))
 			}
@@ -113,6 +116,7 @@ func buildRouter(ctx context.Context, cfg *config.GatewayConfig, logger *slog.Lo
 			"prefix", svc.Prefix,
 			"upstreams", svc.Upstreams,
 			"auth", svc.Auth,
+			"required_roles", svc.RequiredRoles,
 			"rate_limited", limiter != nil,
 			"cached", svc.Cache != nil,
 		)
@@ -144,7 +148,7 @@ func buildRouter(ctx context.Context, cfg *config.GatewayConfig, logger *slog.Lo
 // buildRedisClient returns nil when rate limiting is disabled or uses memory.
 // Pings at startup to surface misconfiguration before serving traffic.
 func buildRedisClient(ctx context.Context, cfg *config.GatewayConfig) (*redis.Client, error) {
-	if !cfg.RateLimit.Enabled || cfg.RateLimit.Backend != "redis" {
+	if cfg.RateLimit == nil || cfg.RateLimit.Backend != "redis" {
 		return nil, nil
 	}
 
@@ -193,7 +197,7 @@ func buildServiceLimiter(
 		r = svc.RateLimit.Rate
 		b = svc.RateLimit.Burst
 		keyBy = svc.RateLimit.KeyBy
-	case cfg.RateLimit.Enabled:
+	case cfg.RateLimit != nil:
 		r = cfg.RateLimit.Rate
 		b = cfg.RateLimit.Burst
 		keyBy = "ip"
@@ -211,13 +215,11 @@ func buildServiceLimiter(
 		return ratelimit.NewRedisLimiter(redisClient, prefix, r, b), keyFunc, nil
 	}
 
-	interval := cfg.RateLimit.CleanupInterval
-	if interval <= 0 {
-		interval = time.Minute
-	}
-	maxIdle := cfg.RateLimit.CleanupMaxIdle
-	if maxIdle <= 0 {
-		maxIdle = 3 * time.Minute
+	interval := time.Minute
+	maxIdle := 3 * time.Minute
+	if cfg.RateLimit != nil {
+		interval = cfg.RateLimit.CleanupInterval
+		maxIdle = cfg.RateLimit.CleanupMaxIdle
 	}
 
 	return ratelimit.NewMemoryLimiter(ctx, prefix, rate.Limit(r), b, interval, maxIdle), keyFunc, nil
@@ -229,12 +231,11 @@ func buildServiceHandler(
 	logger *slog.Logger,
 ) (http.Handler, *health.Checker) {
 	checker := health.NewChecker(svc.Upstreams, cfg.HealthCheck.Interval, cfg.HealthCheck.Path)
-
 	lb := loadbalancer.NewRoundRobin(svc.Upstreams, checker)
-
 	breakers := make(map[string]*circuitbreaker.Breaker, len(svc.Upstreams))
+
 	for _, u := range svc.Upstreams {
-		if cfg.CircuitBreaker.Enabled {
+		if cfg.CircuitBreaker != nil {
 			breakers[u] = circuitbreaker.NewBreaker(
 				cfg.CircuitBreaker.MaxFailures,
 				cfg.CircuitBreaker.Timeout,

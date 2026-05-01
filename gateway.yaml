@@ -6,7 +6,6 @@ compression:
   min_bytes: 1024
 
 rate_limit:
-  enabled: true
   backend: redis
   rate: 20
   burst: 30
@@ -18,7 +17,6 @@ health_check:
   path: /healthz
 
 circuit_breaker:
-  enabled: true
   max_failures: 3
   timeout: 10s
 
@@ -40,7 +38,8 @@ services:
       - http://orders:8080
       - http://orders-2:8080
     auth: true
+    required_roles: [admin]
     rate_limit:
         rate: 5
-        burst: 10                                                                                      
+        burst: 10
         key_by: jwt_sub

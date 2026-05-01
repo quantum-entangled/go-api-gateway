@@ -44,7 +44,7 @@ func TestGateway_E2E(t *testing.T) {
 		MaxInFlight:    100,
 		Compression:    config.CompressionConfig{Enabled: true, MinBytes: 1},
 		HealthCheck:    config.HealthCheckConfig{Interval: time.Minute, Path: "/healthz"},
-		CircuitBreaker: config.CBConfig{Enabled: true, MaxFailures: 5, Timeout: 30 * time.Second},
+		CircuitBreaker: &config.CBConfig{MaxFailures: 5, Timeout: 30 * time.Second},
 		JWTPublicKey:   pubKeyPath,
 		Services: []config.ServiceConfig{{
 			Name:      "catalog",

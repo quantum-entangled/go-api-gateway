@@ -6,13 +6,33 @@ import (
 )
 
 func validate(cfg *GatewayConfig) error {
+	if err := validateServices(cfg); err != nil {
+		return err
+	}
+	if err := validateRateLimit(cfg.RateLimit); err != nil {
+		return err
+	}
+	if err := validateCircuitBreaker(cfg.CircuitBreaker); err != nil {
+		return err
+	}
+	applyHealthCheckDefaults(&cfg.HealthCheck)
+	applyCompressionDefaults(&cfg.Compression)
+	applyServerLimitDefaults(cfg)
+	applyTransportDefaults(&cfg.Transport)
+	return nil
+}
+
+func validateServices(cfg *GatewayConfig) error {
 	if len(cfg.Services) == 0 {
 		return fmt.Errorf("at least one service is required")
 	}
 
-	seenPrefix := make(map[string]bool, len(cfg.Services))
 	seenName := make(map[string]bool, len(cfg.Services))
-	for i, svc := range cfg.Services {
+	seenPrefix := make(map[string]bool, len(cfg.Services))
+
+	for i := range cfg.Services {
+		svc := &cfg.Services[i]
+
 		if svc.Name == "" {
 			return fmt.Errorf("service[%d]: name is required", i)
 		}
@@ -31,105 +51,20 @@ func validate(cfg *GatewayConfig) error {
 		}
 		seenPrefix[svc.Prefix] = true
 
+		if len(svc.RequiredRoles) > 0 && !svc.Auth {
+			return fmt.Errorf("service %q: required_roles requires auth: true", svc.Name)
+		}
+
 		if err := validateServiceRateLimit(svc); err != nil {
 			return err
 		}
-		if err := validateServiceCache(svc); err != nil {
-			return err
-		}
-	}
-
-	if cfg.RateLimit.Enabled {
-		if cfg.RateLimit.Rate <= 0 {
-			return fmt.Errorf("rate_limit.rate must be positive")
-		}
-		if cfg.RateLimit.Burst <= 0 {
-			return fmt.Errorf("rate_limit.burst must be positive")
-		}
-		if cfg.RateLimit.Backend == "" {
-			cfg.RateLimit.Backend = "memory"
-		}
-		if cfg.RateLimit.CleanupInterval <= 0 {
-			cfg.RateLimit.CleanupInterval = 1 * time.Minute
-		}
-		if cfg.RateLimit.CleanupMaxIdle <= 0 {
-			cfg.RateLimit.CleanupMaxIdle = 3 * time.Minute
-		}
-		switch cfg.RateLimit.Backend {
-		case "memory":
-		case "redis":
-			if cfg.RateLimit.Redis.Addr == "" {
-				return fmt.Errorf("rate_limit.redis.addr is required when backend is redis")
-			}
-		default:
-			return fmt.Errorf("rate_limit.backend must be \"memory\" or \"redis\" (got %q)", cfg.RateLimit.Backend)
-		}
-	}
-
-	if cfg.CircuitBreaker.Enabled {
-		if cfg.CircuitBreaker.MaxFailures <= 0 {
-			return fmt.Errorf("circuit_breaker.max_failures must be positive")
-		}
-		if cfg.CircuitBreaker.Timeout <= 0 {
-			return fmt.Errorf("circuit_breaker.timeout must be positive")
-		}
-	}
-
-	if cfg.HealthCheck.Path == "" {
-		cfg.HealthCheck.Path = "/healthz"
-	}
-	if cfg.HealthCheck.Interval <= 0 {
-		cfg.HealthCheck.Interval = 5 * time.Second
-	}
-
-	if cfg.Compression.Enabled && cfg.Compression.MinBytes <= 0 {
-		cfg.Compression.MinBytes = 1024
-	}
-
-	if cfg.MaxBodyBytes <= 0 {
-		cfg.MaxBodyBytes = 1 << 20 // 1 MB
-	}
-	if cfg.MaxHeaderBytes <= 0 {
-		cfg.MaxHeaderBytes = 32 << 10 // 32 KB
-	}
-
-	if cfg.Transport.MaxIdleConns <= 0 {
-		cfg.Transport.MaxIdleConns = 1000
-	}
-	if cfg.Transport.MaxIdleConnsPerHost <= 0 {
-		cfg.Transport.MaxIdleConnsPerHost = 200
-	}
-	if cfg.Transport.IdleConnTimeout <= 0 {
-		cfg.Transport.IdleConnTimeout = 90 * time.Second
-	}
-	if cfg.Transport.DialTimeout <= 0 {
-		cfg.Transport.DialTimeout = 5 * time.Second
-	}
-	if cfg.Transport.TLSHandshakeTimeout <= 0 {
-		cfg.Transport.TLSHandshakeTimeout = 5 * time.Second
+		applyServiceCacheDefaults(svc)
 	}
 
 	return nil
 }
 
-func validateServiceCache(svc ServiceConfig) error {
-	cc := svc.Cache
-	if cc == nil {
-		return nil
-	}
-	if cc.TTL <= 0 {
-		cc.TTL = 60 * time.Second
-	}
-	if cc.MaxEntries <= 0 {
-		cc.MaxEntries = 1024
-	}
-	if cc.MaxBytes <= 0 {
-		cc.MaxBytes = 16 << 20 // 16 MB
-	}
-	return nil
-}
-
-func validateServiceRateLimit(svc ServiceConfig) error {
+func validateServiceRateLimit(svc *ServiceConfig) error {
 	rl := svc.RateLimit
 	if rl == nil {
 		return nil
@@ -153,4 +88,106 @@ func validateServiceRateLimit(svc ServiceConfig) error {
 	}
 
 	return nil
+}
+
+func validateRateLimit(rl *RateLimitConfig) error {
+	if rl == nil {
+		return nil
+	}
+	if rl.Rate <= 0 {
+		return fmt.Errorf("rate_limit.rate must be positive")
+	}
+	if rl.Burst <= 0 {
+		return fmt.Errorf("rate_limit.burst must be positive")
+	}
+	if rl.Backend == "" {
+		rl.Backend = "memory"
+	}
+	switch rl.Backend {
+	case "memory":
+	case "redis":
+		if rl.Redis.Addr == "" {
+			return fmt.Errorf("rate_limit.redis.addr is required when backend is redis")
+		}
+	default:
+		return fmt.Errorf("rate_limit.backend must be \"memory\" or \"redis\" (got %q)", rl.Backend)
+	}
+	if rl.CleanupInterval <= 0 {
+		rl.CleanupInterval = 1 * time.Minute
+	}
+	if rl.CleanupMaxIdle <= 0 {
+		rl.CleanupMaxIdle = 3 * time.Minute
+	}
+	return nil
+}
+
+func validateCircuitBreaker(cb *CBConfig) error {
+	if cb == nil {
+		return nil
+	}
+	if cb.MaxFailures <= 0 {
+		return fmt.Errorf("circuit_breaker.max_failures must be positive")
+	}
+	if cb.Timeout <= 0 {
+		return fmt.Errorf("circuit_breaker.timeout must be positive")
+	}
+	return nil
+}
+
+func applyServiceCacheDefaults(svc *ServiceConfig) {
+	cc := svc.Cache
+	if cc == nil {
+		return
+	}
+	if cc.TTL <= 0 {
+		cc.TTL = 60 * time.Second
+	}
+	if cc.MaxEntries <= 0 {
+		cc.MaxEntries = 1024
+	}
+	if cc.MaxBytes <= 0 {
+		cc.MaxBytes = 16 << 20 // 16 MB
+	}
+}
+
+func applyHealthCheckDefaults(hc *HealthCheckConfig) {
+	if hc.Path == "" {
+		hc.Path = "/healthz"
+	}
+	if hc.Interval <= 0 {
+		hc.Interval = 5 * time.Second
+	}
+}
+
+func applyCompressionDefaults(cmp *CompressionConfig) {
+	if cmp.Enabled && cmp.MinBytes <= 0 {
+		cmp.MinBytes = 1024
+	}
+}
+
+func applyServerLimitDefaults(cfg *GatewayConfig) {
+	if cfg.MaxBodyBytes <= 0 {
+		cfg.MaxBodyBytes = 1 << 20 // 1 MB
+	}
+	if cfg.MaxHeaderBytes <= 0 {
+		cfg.MaxHeaderBytes = 32 << 10 // 32 KB
+	}
+}
+
+func applyTransportDefaults(t *TransportConfig) {
+	if t.MaxIdleConns <= 0 {
+		t.MaxIdleConns = 1000
+	}
+	if t.MaxIdleConnsPerHost <= 0 {
+		t.MaxIdleConnsPerHost = 200
+	}
+	if t.IdleConnTimeout <= 0 {
+		t.IdleConnTimeout = 90 * time.Second
+	}
+	if t.DialTimeout <= 0 {
+		t.DialTimeout = 5 * time.Second
+	}
+	if t.TLSHandshakeTimeout <= 0 {
+		t.TLSHandshakeTimeout = 5 * time.Second
+	}
 }
