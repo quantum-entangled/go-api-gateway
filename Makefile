@@ -1,4 +1,4 @@
-.PHONY: run build test coverage lint clean infra-up infra-down migrate-up migrate-down bench
+.PHONY: run build test coverage lint clean infra-up infra-down
 
 run:
 	go run ./cmd/gateway; true
@@ -21,16 +21,7 @@ clean:
 	rm -rf bin/ cover.out cover.html
 
 infra-up:
-	docker compose up -d
+	docker compose --env-file ./.env.example up -d
 
 infra-down:
-	docker compose down
-
-migrate-up:
-	goose -dir migrations postgres "$$DATABASE_URL" up
-
-migrate-down:
-	goose -dir migrations postgres "$$DATABASE_URL" down
-
-bench:
-	go test -bench=. -benchmem ./...
+	docker compose --env-file ./.env.example down
