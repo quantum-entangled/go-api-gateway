@@ -72,8 +72,9 @@ func buildRouter(ctx context.Context, cfg *config.GatewayConfig, logger *slog.Lo
 	}
 
 	type serviceCheck struct {
-		name    string
-		checker *health.Checker
+		name      string
+		upstreams []string
+		checker   *health.Checker
 	}
 	checks := make([]serviceCheck, 0, len(cfg.Services))
 
@@ -83,7 +84,7 @@ func buildRouter(ctx context.Context, cfg *config.GatewayConfig, logger *slog.Lo
 		}
 
 		handler, checker := buildServiceHandler(svc, cfg, logger)
-		checks = append(checks, serviceCheck{name: svc.Name, checker: checker})
+		checks = append(checks, serviceCheck{name: svc.Name, upstreams: svc.Upstreams, checker: checker})
 
 		limiter, keyFunc, err := buildServiceLimiter(ctx, svc, cfg, redisClient)
 		if err != nil {
@@ -120,6 +121,22 @@ func buildRouter(ctx context.Context, cfg *config.GatewayConfig, logger *slog.Lo
 			"rate_limited", limiter != nil,
 			"cached", svc.Cache != nil,
 		)
+	}
+
+	if err := m.RegisterUpstreamHealth(func(context.Context) []metrics.UpstreamHealthSample {
+		var samples []metrics.UpstreamHealthSample
+		for _, sc := range checks {
+			for _, u := range sc.upstreams {
+				samples = append(samples, metrics.UpstreamHealthSample{
+					Service:  sc.name,
+					Upstream: u,
+					Healthy:  sc.checker.IsHealthy(u),
+				})
+			}
+		}
+		return samples
+	}); err != nil {
+		return nil, fmt.Errorf("registering upstream health: %w", err)
 	}
 
 	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

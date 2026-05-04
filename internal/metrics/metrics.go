@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -10,8 +11,16 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
+// UpstreamHealthSample is one observation of a single upstream's health.
+type UpstreamHealthSample struct {
+	Service  string
+	Upstream string
+	Healthy  bool
+}
+
 // Metrics holds OpenTelemetry instruments for gateway-level HTTP instrumentation.
 type Metrics struct {
+	meter           metric.Meter
 	requestsTotal   metric.Int64Counter
 	requestDuration metric.Float64Histogram
 }
@@ -41,7 +50,36 @@ func NewMetrics(meter metric.Meter) (*Metrics, error) {
 		return nil, err
 	}
 
-	return &Metrics{requestsTotal: requestsTotal, requestDuration: requestDuration}, nil
+	return &Metrics{meter: meter, requestsTotal: requestsTotal, requestDuration: requestDuration}, nil
+}
+
+// RegisterUpstreamHealth registers an observable gauge that reports 1 for
+// healthy upstreams and 0 for unhealthy ones, labelled by service and upstream.
+// observe is invoked on every metric collection cycle.
+func (m *Metrics) RegisterUpstreamHealth(observe func(context.Context) []UpstreamHealthSample) error {
+	gauge, err := m.meter.Int64ObservableGauge(
+		"gateway.upstream.healthy",
+		metric.WithDescription("Health of each upstream (1 healthy, 0 unhealthy)."),
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = m.meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
+		for _, s := range observe(ctx) {
+			var v int64
+			if s.Healthy {
+				v = 1
+			}
+			o.ObserveInt64(gauge, v, metric.WithAttributes(
+				attribute.String("service", s.Service),
+				attribute.String("upstream", s.Upstream),
+			))
+		}
+		return nil
+	}, gauge)
+
+	return err
 }
 
 // Middleware returns chi-compatible middleware that records request count

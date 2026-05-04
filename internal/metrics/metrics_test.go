@@ -165,6 +165,35 @@ func TestMiddlewareLabelsUnroutedRequestsAsShed(t *testing.T) {
 	assertAttr(t, dp.Attributes, "http.status", "503")
 }
 
+func TestRegisterUpstreamHealth(t *testing.T) {
+	m, reader := newTestMetrics(t)
+
+	err := m.RegisterUpstreamHealth(func(context.Context) []metrics.UpstreamHealthSample {
+		return []metrics.UpstreamHealthSample{
+			{Service: "catalog", Upstream: "http://a", Healthy: true},
+			{Service: "catalog", Upstream: "http://b", Healthy: false},
+		}
+	})
+	require.NoError(t, err)
+
+	rm := collect(t, reader)
+	got := findMetric(t, rm, "gateway.upstream.healthy")
+
+	gauge, ok := got.Data.(metricdata.Gauge[int64])
+	require.True(t, ok, "expected Gauge[int64] data type")
+	require.Len(t, gauge.DataPoints, 2)
+
+	values := map[string]int64{}
+	for _, dp := range gauge.DataPoints {
+		upstream, _ := dp.Attributes.Value(attribute.Key("upstream"))
+		values[upstream.AsString()] = dp.Value
+		assertAttr(t, dp.Attributes, "service", "catalog")
+	}
+
+	assert.Equal(t, int64(1), values["http://a"])
+	assert.Equal(t, int64(0), values["http://b"])
+}
+
 func TestMiddlewareRecords5xxStatus(t *testing.T) {
 	m, reader := newTestMetrics(t)
 
