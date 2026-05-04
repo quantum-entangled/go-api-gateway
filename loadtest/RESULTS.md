@@ -2,12 +2,18 @@
 
 Two workloads. A vegeta attack at a fixed rate, and a user-flow scenario with realistic session patterns.
 
-To reproduce these runs, point the gateway container at `./loadtest/gateway.yaml` by swapping the volume mapping in `compose.yaml` (rate limiter is off there, which is what these numbers measure).
+To reproduce these runs, start the stack with `loadtest/gateway.yaml` (rate limiter, cache, and compression off, which is what these numbers measure):
+
+```
+GATEWAY_CONFIG=./loadtest/gateway.yaml make infra-up
+```
 
 ## Vegeta: 2400 req/s for 60s
 
+Requires [vegeta](https://github.com/tsenart/vegeta) on `PATH`, or pass its location via `VEGETA=/path/to/vegeta`.
+
 ```
-./loadtest/vegeta/run.sh -max 2400 -start 2400 -dur 60s -conns 200
+./loadtest/vegeta/run.sh -max 2400 -start 2400 -dur 60s
 ```
 
 Vegeta splits evenly across three targets: `GET /catalog/products`, `GET /catalog/products/1`, and `GET /orders/orders` (authed).
@@ -16,9 +22,9 @@ Vegeta splits evenly across three targets: `GET /catalog/products`, `GET /catalo
 
 | Metric | Value |
 |---|---|
-| Requests / rate | 144,000 / 2400.01 req/s |
+| Requests / rate | 144,000 / 2400.04 req/s |
 | Success | 100.00% (all 200) |
-| Latency p50 / p95 / p99 / max | 0.66 ms / 1.31 ms / 2.94 ms / 32.6 ms |
+| Latency p50 / p95 / p99 / max | 0.66 ms / 1.17 ms / 2.63 ms / 21.95 ms |
 | Errors | 0 |
 
 **Server (gateway):**
@@ -27,12 +33,12 @@ Vegeta splits evenly across three targets: `GET /catalog/products`, `GET /catalo
 |---|---|
 | Peak rate | 2400 req/s |
 | 5xx count | 0 |
-| p95 `/catalog/*` / `/orders/*` | 0.97 ms / 0.97 ms |
-| p99 `/catalog/*` / `/orders/*` | 2.92 ms / 3.42 ms |
+| p95 `/catalog/*` / `/orders/*` | 0.96 ms / 0.97 ms |
+| p99 `/catalog/*` / `/orders/*` | 2.13 ms / 2.85 ms |
 | Peak goroutines | 110 |
-| Peak memory (stack + other) | ~22 MB |
+| Peak memory (stack + other) | ~20 MB |
 
-Client and server latencies agree within a millisecond. No queuing. Goroutines stay near idle. This is the stable operating point on this host.
+Client and server latencies agree within a millisecond. No queuing. Goroutines stay near idle. This is the stable operating point on this host. The 22 ms `max` is the first-request spike from lazy stdlib and OTel init. Steady-state stays under 3 ms.
 
 ## User-flow: 200 users for 60s
 
@@ -81,10 +87,6 @@ Specs: AMD Ryzen 7 5800H (8c/16t, up to 4.46 GHz), 31 GiB RAM, Linux 6.18, Docke
 Each upstream keeps a pool of 50 Postgres connections and warms them at startup. Without the warm pool, the first traffic spike triggers a burst of lazy dials, which overloads Docker's embedded DNS resolver. Four replicas times 50 is 200 connections against Postgres's 300-slot limit.
 
 Gateway to upstream uses a tuned `http.Transport`: `MaxIdleConnsPerHost=200`, `MaxIdleConns=1000`, `IdleConnTimeout=90s`. Every proxied request reuses a keep-alive connection.
-
-Client to gateway:
-- vegeta uses `-conns 200`. Without it, vegeta opens a new TCP connection per request and the host exhausts ephemeral ports in seconds.
-- user-flow gives each virtual user one `*http.Client` with default keep-alive, so one connection carries the whole session.
 
 ### Gateway features on during the test
 

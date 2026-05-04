@@ -6,8 +6,8 @@ A self-contained API gateway in Go. It sits in front of HTTP services and handle
 
 - Reverse proxy with health-aware round-robin load balancing across upstream replicas
 - Per-upstream circuit breaker with a closed -> open -> half-open FSM
-- Concurrent upstream health checks, with unhealthy upstreams taken out of rotation
-- JWT verification (RS256, algorithm-pinned) per service, with role extraction into request context
+- Concurrent upstream health checks, with unhealthy upstreams taken out of rotation and exposed as a per-upstream metric
+- JWT verification (RS256, algorithm-pinned) per service, with role extraction into request context and optional any-of role allowlist
 - Rate limiting, in-memory or Redis-backed token bucket, keyed by IP or JWT subject, global or per service
 - Response cache with LRU eviction, TTL, Vary-aware keys, ETag/304 support, and singleflight to prevent stampedes
 - gzip compression with a configurable size threshold
@@ -115,7 +115,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/orders/orders
 ### Observability
 
 - Grafana: `http://localhost:${GRAFANA_PORT}`, login `admin` / `admin`.
-- Default home dashboard: `grafana/dashboards/gateway-overview.json` (provisioned at boot). Covers traffic, latency, and resource use, with logs and traces linked.
+- Default home dashboard: `grafana/dashboards/gateway-overview.json` (provisioned at boot). Covers traffic, latency, resource use, and per-upstream health, with logs and traces linked.
 - OTLP receivers: `${OTEL_GRPC_PORT}` (4317), `${OTEL_HTTP_PORT}` (4318). The gateway uses HTTP.
 - Different backend? Point `OTEL_EXPORTER_OTLP_ENDPOINT` at its OTLP HTTP receiver.
 
@@ -123,16 +123,10 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/orders/orders
 
 Two generators in `loadtest/`, both expect the gateway at `http://localhost:8080`:
 
-- `loadtest/vegeta/run.sh`: vegeta at a fixed or ramping rate against `/catalog/products`, `/catalog/products/1`, `/orders/orders` (authed). Results in `loadtest/vegeta/results/`.
+- `loadtest/vegeta/run.sh`: vegeta at a fixed or ramping rate against `/catalog/products`, `/catalog/products/1`, `/orders/orders` (authed). Requires [vegeta](https://github.com/tsenart/vegeta) on `PATH`, or pass its location via `VEGETA=/path/to/vegeta`. Results in `loadtest/vegeta/results/`.
 - `loadtest/scenarios/user_flow.go`: N concurrent users doing browse-and-order sessions with think time.
 
-For repeatable numbers, use `loadtest/gateway.yaml` (rate limiter, cache, and compression off):
-
-```
-GATEWAY_CONFIG=./loadtest/gateway.yaml make infra-up
-```
-
-Recent run on a single host (Ryzen 7 5800H): vegeta at 2400 req/s for 60s, 100% success, p99 under 3 ms server-side. User-flow at 200 concurrent users hit ~1960 req/s, p99 around 10 ms on the orders write path. Full numbers and host setup in `loadtest/RESULTS.md`.
+Recent run on a single host (Ryzen 7 5800H): vegeta at 2400 req/s for 60s, 100% success, p99 under 3 ms server-side. User-flow at 200 concurrent users hit ~1960 req/s, p99 around 10 ms on the orders write path. Full numbers, host setup, and reproduction steps in `loadtest/RESULTS.md`.
 
 ## Tests
 
