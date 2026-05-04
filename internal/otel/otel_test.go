@@ -9,12 +9,19 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 )
+
+var testIntervals = Intervals{
+	MetricInterval:    10 * time.Second,
+	TraceBatchTimeout: 5 * time.Second,
+	LogBatchTimeout:   1 * time.Second,
+}
 
 // fakeOTLP returns an httptest.Server that accepts OTLP HTTP exports without
 // inspecting them. Setup needs a reachable host:port even if no batches flush.
@@ -32,7 +39,7 @@ func fakeOTLP(t *testing.T) string {
 func newTestSDK(t *testing.T) *SDK {
 	t.Helper()
 	ctx := context.Background()
-	sdk, err := Setup(ctx, fakeOTLP(t))
+	sdk, err := Setup(ctx, fakeOTLP(t), testIntervals)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sdk.Shutdown(ctx) })
 	return sdk
@@ -56,7 +63,7 @@ func TestSetup_RegistersGlobalProvidersAndPropagator(t *testing.T) {
 
 func TestShutdown_IsSafeToCallTwice(t *testing.T) {
 	ctx := context.Background()
-	sdk, err := Setup(ctx, fakeOTLP(t))
+	sdk, err := Setup(ctx, fakeOTLP(t), testIntervals)
 	require.NoError(t, err)
 
 	require.NoError(t, sdk.Shutdown(ctx))

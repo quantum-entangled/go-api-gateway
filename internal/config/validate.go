@@ -19,6 +19,7 @@ func validate(cfg *GatewayConfig) error {
 	applyCompressionDefaults(&cfg.Compression)
 	applyServerLimitDefaults(cfg)
 	applyTransportDefaults(&cfg.Transport)
+	applyTelemetryDefaults(&cfg.Telemetry)
 	return nil
 }
 
@@ -171,6 +172,18 @@ func applyServerLimitDefaults(cfg *GatewayConfig) {
 	}
 	if cfg.MaxHeaderBytes <= 0 {
 		cfg.MaxHeaderBytes = 32 << 10 // 32 KB
+	}
+}
+
+func applyTelemetryDefaults(t *TelemetryConfig) {
+	if t.MetricInterval <= 0 {
+		t.MetricInterval = 10 * time.Second
+	}
+	if t.TraceBatchTimeout <= 0 {
+		t.TraceBatchTimeout = 5 * time.Second
+	}
+	if t.LogBatchTimeout <= 0 {
+		t.LogBatchTimeout = 1 * time.Second
 	}
 }
 

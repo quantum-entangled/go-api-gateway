@@ -29,10 +29,17 @@ type SDK struct {
 	LoggerProvider *sdklog.LoggerProvider
 }
 
+// Intervals controls how often each OTel exporter flushes data.
+type Intervals struct {
+	MetricInterval    time.Duration
+	TraceBatchTimeout time.Duration
+	LogBatchTimeout   time.Duration
+}
+
 // Setup initializes OTel with OTLP HTTP exporters for traces, metrics, and logs.
 // It registers global TracerProvider, MeterProvider, and TextMapPropagator so
 // that library code (e.g. proxy.injectTraceContext) can use otel.GetTextMapPropagator().
-func Setup(ctx context.Context, endpoint string) (*SDK, error) {
+func Setup(ctx context.Context, endpoint string, iv Intervals) (*SDK, error) {
 	res, err := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
@@ -54,7 +61,7 @@ func Setup(ctx context.Context, endpoint string) (*SDK, error) {
 	}
 
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(traceExp, sdktrace.WithBatchTimeout(5*time.Second)),
+		sdktrace.WithBatcher(traceExp, sdktrace.WithBatchTimeout(iv.TraceBatchTimeout)),
 		sdktrace.WithResource(res),
 	)
 
@@ -70,7 +77,7 @@ func Setup(ctx context.Context, endpoint string) (*SDK, error) {
 
 	mp := sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp,
-			sdkmetric.WithInterval(10*time.Second),
+			sdkmetric.WithInterval(iv.MetricInterval),
 		)),
 		sdkmetric.WithResource(res),
 	)
@@ -87,7 +94,10 @@ func Setup(ctx context.Context, endpoint string) (*SDK, error) {
 	}
 
 	lp := sdklog.NewLoggerProvider(
-		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExp)),
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(
+			logExp,
+			sdklog.WithExportInterval(iv.LogBatchTimeout),
+		)),
 		sdklog.WithResource(res),
 	)
 

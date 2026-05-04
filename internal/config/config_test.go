@@ -565,3 +565,30 @@ func TestLoad_OmittedCircuitBreakerIsNil(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, cfg.CircuitBreaker)
 }
+
+func TestLoad_TelemetryRoundTrip(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+telemetry:
+  metric_interval: 30s
+  trace_batch_timeout: 2s
+  log_batch_timeout: 500ms
+services:
+  - name: svc
+    prefix: /svc
+    upstreams: [http://localhost:8081]
+`))
+
+	require.NoError(t, err)
+	assert.Equal(t, 30*time.Second, cfg.Telemetry.MetricInterval)
+	assert.Equal(t, 2*time.Second, cfg.Telemetry.TraceBatchTimeout)
+	assert.Equal(t, 500*time.Millisecond, cfg.Telemetry.LogBatchTimeout)
+}
+
+func TestLoad_TelemetryDefaults(t *testing.T) {
+	cfg, err := Load(writeConfig(t, minimalServiceConfig))
+
+	require.NoError(t, err)
+	assert.Equal(t, 10*time.Second, cfg.Telemetry.MetricInterval)
+	assert.Equal(t, 5*time.Second, cfg.Telemetry.TraceBatchTimeout)
+	assert.Equal(t, 1*time.Second, cfg.Telemetry.LogBatchTimeout)
+}

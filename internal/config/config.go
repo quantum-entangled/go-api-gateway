@@ -19,12 +19,21 @@ type GatewayConfig struct {
 	HealthCheck    HealthCheckConfig `yaml:"health_check"`
 	CircuitBreaker *CBConfig         `yaml:"circuit_breaker"`
 	Transport      TransportConfig   `yaml:"transport"`
+	Telemetry      TelemetryConfig   `yaml:"telemetry"`
 	Services       []ServiceConfig   `yaml:"services"`
 
 	// Infra settings from environment variables (not in YAML).
 	OTelEndpoint  string `yaml:"-"`
 	JWTPublicKey  string `yaml:"-"`
 	RedisPassword string `yaml:"-"`
+}
+
+// TelemetryConfig controls how often OTel exporters flush data.
+// Has no effect when OTEL_EXPORTER_OTLP_ENDPOINT is unset.
+type TelemetryConfig struct {
+	MetricInterval    time.Duration `yaml:"metric_interval"`
+	TraceBatchTimeout time.Duration `yaml:"trace_batch_timeout"`
+	LogBatchTimeout   time.Duration `yaml:"log_batch_timeout"`
 }
 
 // TransportConfig controls the HTTP transport used for proxying to upstreams.

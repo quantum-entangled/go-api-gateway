@@ -20,6 +20,11 @@ circuit_breaker:
   max_failures: 3
   timeout: 10s
 
+telemetry:
+  metric_interval: 5s
+  trace_batch_timeout: 5s
+  log_batch_timeout: 1s
+
 services:
   - name: catalog
     prefix: /catalog

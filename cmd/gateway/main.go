@@ -32,7 +32,11 @@ func main() {
 	defer stop()
 
 	if cfg.OTelEndpoint != "" {
-		sdk, err := gatewayotel.Setup(ctx, cfg.OTelEndpoint)
+		sdk, err := gatewayotel.Setup(ctx, cfg.OTelEndpoint, gatewayotel.Intervals{
+			MetricInterval:    cfg.Telemetry.MetricInterval,
+			TraceBatchTimeout: cfg.Telemetry.TraceBatchTimeout,
+			LogBatchTimeout:   cfg.Telemetry.LogBatchTimeout,
+		})
 		if err != nil {
 			slog.Error("failed to setup OTel", "error", err)
 			os.Exit(1)
