@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -170,7 +171,21 @@ func buildRedisClient(ctx context.Context, cfg *config.GatewayConfig) (*redis.Cl
 	}
 
 	rc := cfg.RateLimit.Redis
-	opts := &redis.Options{Addr: rc.Addr, Password: cfg.RedisPassword}
+	opts := buildRedisOptions(rc, cfg.RedisPassword)
+	client := redis.NewClient(opts)
+
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		return nil, fmt.Errorf("redis ping at %s: %w", rc.Addr, err)
+	}
+
+	slog.Info("redis client: connected", "addr", rc.Addr)
+	return client, nil
+}
+
+func buildRedisOptions(rc config.RedisConfig, password string) *redis.Options {
+	opts := &redis.Options{Addr: rc.Addr, Password: password}
 	if rc.PoolSize > 0 {
 		opts.PoolSize = rc.PoolSize
 	}
@@ -183,16 +198,10 @@ func buildRedisClient(ctx context.Context, cfg *config.GatewayConfig) (*redis.Cl
 	if rc.WriteTimeout > 0 {
 		opts.WriteTimeout = rc.WriteTimeout
 	}
-
-	client := redis.NewClient(opts)
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if err := client.Ping(pingCtx).Err(); err != nil {
-		return nil, fmt.Errorf("redis ping at %s: %w", rc.Addr, err)
+	if rc.TLS {
+		opts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	}
-
-	slog.Info("redis client: connected", "addr", rc.Addr)
-	return client, nil
+	return opts
 }
 
 // buildServiceLimiter picks the service override over the global default,

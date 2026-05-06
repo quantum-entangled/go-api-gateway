@@ -289,6 +289,7 @@ rate_limit:
     dial_timeout: 2s
     read_timeout: 750ms
     write_timeout: 1500ms
+    tls: true
 services:
   - name: svc
     prefix: /svc
@@ -302,6 +303,7 @@ services:
 	assert.Equal(t, 2*time.Second, cfg.RateLimit.Redis.DialTimeout)
 	assert.Equal(t, 750*time.Millisecond, cfg.RateLimit.Redis.ReadTimeout)
 	assert.Equal(t, 1500*time.Millisecond, cfg.RateLimit.Redis.WriteTimeout)
+	assert.True(t, cfg.RateLimit.Redis.TLS)
 }
 
 func TestLoad_RedisPasswordFromEnv(t *testing.T) {

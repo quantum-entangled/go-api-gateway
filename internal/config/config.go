@@ -64,6 +64,7 @@ type RedisConfig struct {
 	DialTimeout  time.Duration `yaml:"dial_timeout"`
 	ReadTimeout  time.Duration `yaml:"read_timeout"`
 	WriteTimeout time.Duration `yaml:"write_timeout"`
+	TLS          bool          `yaml:"tls"`
 }
 
 // CompressionConfig controls gzip encoding of responses on service routes.
