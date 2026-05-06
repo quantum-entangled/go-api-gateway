@@ -29,7 +29,7 @@ services:
     build:
       context: .
       dockerfile_inline: |
-        FROM golang:1.25-alpine AS build
+        FROM golang:1.26-alpine AS build
         RUN go install github.com/pressly/goose/v3/cmd/goose@latest
         FROM alpine:3.23
         COPY --from=build /go/bin/goose /usr/local/bin/goose
@@ -49,7 +49,7 @@ services:
     build:
       context: .
       dockerfile_inline: |
-        FROM golang:1.25-alpine AS build
+        FROM golang:1.26-alpine AS build
         WORKDIR /app
         COPY go.mod go.sum ./
         RUN go mod download
@@ -78,7 +78,7 @@ services:
     build:
       context: .
       dockerfile_inline: |
-        FROM golang:1.25-alpine AS build
+        FROM golang:1.26-alpine AS build
         WORKDIR /app
         COPY go.mod go.sum ./
         RUN go mod download
@@ -131,15 +131,17 @@ services:
       retries: 10
 
   gateway:
-    build: .
+    build:
+      context: .
+      target: dev
     ports:
       - "${GATEWAY_PORT}:${GATEWAY_PORT}"
     volumes:
       - ${GATEWAY_CONFIG:-./gateway.yaml}:/etc/gateway/gateway.yaml:ro
-      - ./example.pem:/etc/gateway/example.pem:ro
+      - ./example.pem:${JWT_PUBLIC_KEY_PATH}:ro
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
-      JWT_PUBLIC_KEY_PATH: /etc/gateway/example.pem
+      JWT_PUBLIC_KEY_PATH: ${JWT_PUBLIC_KEY_PATH}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     command: [ "-config", "/etc/gateway/gateway.yaml" ]
     depends_on:
@@ -158,7 +160,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD-SHELL", "wget -qO- http://localhost:${GATEWAY_PORT}/healthz || exit 1" ]
+      test: [ "CMD", "/usr/bin/wget", "-qO-", "http://localhost:${GATEWAY_PORT}/healthz" ]
       interval: 2s
       timeout: 3s
       retries: 5
