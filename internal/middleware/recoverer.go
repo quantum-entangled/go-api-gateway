@@ -18,7 +18,7 @@ func Recoverer(log *slog.Logger) func(http.Handler) http.Handler {
 					log.Error("panic recovered", "error", v, "stack", string(debug.Stack()))
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusInternalServerError)
-					json.NewEncoder(w).Encode(map[string]string{"error": "internal server error"})
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": "internal server error"})
 				}
 			}()
 

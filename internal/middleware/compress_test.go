@@ -29,7 +29,7 @@ func TestCompress_GzipsWhenClientAccepts(t *testing.T) {
 
 	gz, err := gzip.NewReader(rec.Body)
 	require.NoError(t, err)
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	decoded, err := io.ReadAll(gz)
 	require.NoError(t, err)
 	assert.Equal(t, body, string(decoded))
@@ -67,7 +67,7 @@ func TestCompress_SkipsWhenUpstreamAlreadyEncoded(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Encoding", "gzip")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body))
 	})
 	handler := middleware.Compress(1024)(inner)
 
@@ -85,7 +85,7 @@ func TestCompress_SkipsNonCompressibleContentType(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body))
 	})
 	handler := middleware.Compress(1024)(inner)
 
@@ -102,6 +102,6 @@ func okBodyHandler(body string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body))
 	})
 }

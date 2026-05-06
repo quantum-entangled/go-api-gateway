@@ -22,7 +22,7 @@ func cachedJSONHandler(body string, hits *int32) http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body))
 	})
 }
 
@@ -62,7 +62,7 @@ func TestCache_RespectsResponseNoStore(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("private"))
+		_, _ = w.Write([]byte("private"))
 	})
 	handler := middleware.Cache(c, middleware.CacheConfig{TTL: time.Minute})(inner)
 
@@ -81,7 +81,7 @@ func TestCache_HonorsResponseMaxAge(t *testing.T) {
 		atomic.AddInt32(&hits, 1)
 		w.Header().Set("Cache-Control", "max-age=1")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("payload"))
+		_, _ = w.Write([]byte("payload"))
 	})
 	// Config TTL is generous so the response's max-age must override it.
 	handler := middleware.Cache(c, middleware.CacheConfig{TTL: time.Hour})(inner)
@@ -154,7 +154,7 @@ func TestCache_VaryProducesSeparateEntries(t *testing.T) {
 		w.Header().Set("Vary", "Accept-Language")
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("lang=" + r.Header.Get("Accept-Language")))
+		_, _ = w.Write([]byte("lang=" + r.Header.Get("Accept-Language")))
 	})
 	handler := middleware.Cache(c, middleware.CacheConfig{TTL: time.Minute})(inner)
 
@@ -175,7 +175,7 @@ func TestCache_VaryAnyIsNotCached(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Vary", "*")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("payload"))
+		_, _ = w.Write([]byte("payload"))
 	})
 	handler := middleware.Cache(c, middleware.CacheConfig{TTL: time.Minute})(inner)
 
@@ -204,7 +204,7 @@ func TestCache_AuthorizedRequestCachedWhenPublic(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=60")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("shared"))
+		_, _ = w.Write([]byte("shared"))
 	})
 	handler := middleware.Cache(c, middleware.CacheConfig{TTL: time.Minute})(inner)
 
@@ -220,7 +220,7 @@ func TestCache_NonOKResponseNotCached(t *testing.T) {
 	c := cache.NewLRU(10, 1<<20)
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("missing"))
+		_, _ = w.Write([]byte("missing"))
 	})
 	handler := middleware.Cache(c, middleware.CacheConfig{TTL: time.Minute})(inner)
 
@@ -256,7 +256,7 @@ func TestCache_SingleflightCollapsesConcurrentMisses(t *testing.T) {
 		atomic.AddInt32(&hits, 1)
 		<-gate
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("payload"))
+		_, _ = w.Write([]byte("payload"))
 	})
 	handler := middleware.Cache(c, middleware.CacheConfig{TTL: time.Minute})(inner)
 

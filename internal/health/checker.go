@@ -84,7 +84,7 @@ func (c *Checker) check(ctx context.Context, url string) {
 		c.status.Store(url, false)
 		return
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	if res.StatusCode != http.StatusOK {
 		c.status.Store(url, false)

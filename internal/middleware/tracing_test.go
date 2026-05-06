@@ -23,7 +23,7 @@ func newTestTracing(t *testing.T) (*tracetest.InMemoryExporter, func(http.Handle
 
 	exporter := tracetest.NewInMemoryExporter()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
-	t.Cleanup(func() { provider.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
 
 	tracer := provider.Tracer("test")
 	propagator := propagation.TraceContext{}

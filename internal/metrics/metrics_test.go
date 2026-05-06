@@ -22,7 +22,7 @@ func newTestMetrics(t *testing.T) (*metrics.Metrics, *sdkmetric.ManualReader) {
 
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	t.Cleanup(func() { provider.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
 
 	meter := provider.Meter("test")
 	m, err := metrics.NewMetrics(meter)
@@ -125,7 +125,7 @@ func TestMiddlewareDefaultsTo200WithoutWriteHeader(t *testing.T) {
 	r := chi.NewRouter()
 	r.Use(m.Middleware())
 	r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	})
 
 	req := httptest.NewRequest("GET", "/test", nil)

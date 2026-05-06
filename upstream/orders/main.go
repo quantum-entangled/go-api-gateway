@@ -41,7 +41,7 @@ func main() {
 		slog.Error("failed to connect to database", "error", err)
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mux := http.NewServeMux()
 	validate := validator.New()
@@ -63,7 +63,7 @@ func main() {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 
 		orders := make([]order, 0)
 		for rows.Next() {
@@ -157,7 +157,9 @@ func main() {
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	srv.Shutdown(shutdownCtx)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("server shutdown", "error", err)
+	}
 }
 
 func openDB(dsn string) (*sql.DB, error) {
@@ -192,7 +194,7 @@ func openDB(dsn string) (*sql.DB, error) {
 	defer cancel()
 
 	if err := warmPool(ctx, db, maxConns); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 
@@ -207,7 +209,7 @@ func warmPool(ctx context.Context, db *sql.DB, n int) error {
 	conns := make([]*sql.Conn, 0, n)
 	defer func() {
 		for _, c := range conns {
-			c.Close()
+			_ = c.Close()
 		}
 	}()
 
@@ -224,5 +226,5 @@ func warmPool(ctx context.Context, db *sql.DB, n int) error {
 func writeJSON(w http.ResponseWriter, status int, msg any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(msg)
+	_ = json.NewEncoder(w).Encode(msg)
 }

@@ -188,5 +188,5 @@ func classifyProxyError(err error) (int, string) {
 func jsonError(w http.ResponseWriter, status int, msg map[string]string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(msg)
+	_ = json.NewEncoder(w).Encode(msg)
 }

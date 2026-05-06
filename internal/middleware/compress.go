@@ -62,7 +62,7 @@ func (cw *compressWriter) Write(b []byte) (int, error) {
 // decide inspects buffered state and headers to choose compression or passthrough.
 // Must be called exactly once per response, before any bytes go to the wire.
 func (cw *compressWriter) decide() {
-	header := cw.ResponseWriter.Header()
+	header := cw.Header()
 	if header.Get("Content-Encoding") != "" {
 		cw.compress = false
 	} else if !isCompressibleType(header.Get("Content-Type"), cw.buf) {
@@ -87,9 +87,9 @@ func (cw *compressWriter) flushBuffered() {
 
 	if cw.compress {
 		cw.gz.Reset(cw.ResponseWriter)
-		cw.gz.Write(cw.buf)
+		_, _ = cw.gz.Write(cw.buf)
 	} else {
-		cw.ResponseWriter.Write(cw.buf)
+		_, _ = cw.ResponseWriter.Write(cw.buf)
 	}
 	cw.buf = nil
 }
@@ -130,7 +130,7 @@ func Compress(minSize int) func(http.Handler) http.Handler {
 				minSize:        minSize,
 			}
 			next.ServeHTTP(cw, r)
-			cw.finish()
+			_ = cw.finish()
 		})
 	}
 }

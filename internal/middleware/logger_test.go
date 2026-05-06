@@ -20,7 +20,7 @@ func TestLogger_LogsRequest(t *testing.T) {
 	log := slog.New(slog.NewJSONHandler(&buf, nil))
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("hello"))
+		_, _ = w.Write([]byte("hello"))
 	})
 	handler := middleware.RequestID(middleware.Logger(log)(inner))
 	rec := httptest.NewRecorder()
@@ -77,7 +77,7 @@ func TestLogger_ErrorOn5xx(t *testing.T) {
 
 func TestLogger_DefaultStatus(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"check": "pass"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"check": "pass"})
 	})
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))

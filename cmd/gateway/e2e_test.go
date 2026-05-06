@@ -29,7 +29,7 @@ func TestGateway_E2E(t *testing.T) {
 		w.Header().Set("Cache-Control", "public, max-age=60")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"path":%q,"hit":%d}`, r.URL.Path, upstreamHits.Load())
+		_, _ = fmt.Fprintf(w, `{"path":%q,"hit":%d}`, r.URL.Path, upstreamHits.Load())
 	}))
 	t.Cleanup(upstream.Close)
 
@@ -60,7 +60,7 @@ func TestGateway_E2E(t *testing.T) {
 	t.Run("unauthenticated request is rejected", func(t *testing.T) {
 		resp, err := client.Get(gateway.URL + "/catalog/items")
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 		assert.Zero(t, upstreamHits.Load())
 	})
@@ -69,7 +69,7 @@ func TestGateway_E2E(t *testing.T) {
 
 	t.Run("authenticated request reaches upstream", func(t *testing.T) {
 		resp, body := authedGet(t, client, gateway.URL+"/catalog/items", token, false)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.Contains(t, string(body), `"path":"/items"`)
@@ -79,7 +79,7 @@ func TestGateway_E2E(t *testing.T) {
 
 	t.Run("second identical request is served from cache", func(t *testing.T) {
 		resp, body := authedGet(t, client, gateway.URL+"/catalog/items", token, false)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.Contains(t, string(body), `"hit":1`)
@@ -88,7 +88,7 @@ func TestGateway_E2E(t *testing.T) {
 
 	t.Run("Accept-Encoding gzip yields a compressed body", func(t *testing.T) {
 		resp, body := authedGet(t, client, gateway.URL+"/catalog/items", token, true)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.Equal(t, "gzip", resp.Header.Get("Content-Encoding"))

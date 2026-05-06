@@ -173,8 +173,8 @@ func doReq(ctx context.Context, client *http.Client, s *stats, method, url, body
 		}
 		return
 	}
-	io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
 
 	s.record(resp.StatusCode, elapsed)
 }

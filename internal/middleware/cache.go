@@ -215,7 +215,7 @@ func writeRaw(w http.ResponseWriter, status int, header http.Header, body []byte
 		status = http.StatusOK
 	}
 	w.WriteHeader(status)
-	w.Write(body)
+	_, _ = w.Write(body)
 }
 
 // cacheableResponse decides whether a response is allowed in the cache.

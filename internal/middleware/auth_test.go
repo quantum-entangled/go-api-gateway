@@ -34,7 +34,7 @@ func TestJWTAuth_RejectsHS256(t *testing.T) {
 		"exp":   time.Now().Add(time.Hour).Unix(),
 	})
 	// Sign with the public key bytes as HMAC secret (the attack vector)
-	pubKeyBytes := testKey.PublicKey.N.Bytes()
+	pubKeyBytes := testKey.N.Bytes()
 	tokenStr, err := token.SignedString(pubKeyBytes)
 	require.NoError(t, err)
 

@@ -46,7 +46,7 @@ func newTestTracing(t *testing.T) trace.Tracer {
 	t.Helper()
 	exporter := tracetest.NewInMemoryExporter()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
-	t.Cleanup(func() { provider.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
 	return provider.Tracer("test")
 }
 

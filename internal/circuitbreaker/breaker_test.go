@@ -81,7 +81,7 @@ func TestBreaker_HalfOpenSuccessCloses(t *testing.T) {
 	}
 
 	time.Sleep(15 * time.Millisecond)
-	cb.Allow()
+	_ = cb.Allow()
 	cb.RecordSuccess()
 
 	require.NoError(t, cb.Allow())
@@ -97,7 +97,7 @@ func TestBreaker_HalfOpenFailureReopens(t *testing.T) {
 	}
 
 	time.Sleep(15 * time.Millisecond)
-	cb.Allow()
+	_ = cb.Allow()
 	cb.RecordFailure()
 
 	assert.Equal(t, "open", cb.State())
@@ -113,7 +113,7 @@ func TestBreaker_HalfOpenRejectsSecondRequest(t *testing.T) {
 	}
 
 	time.Sleep(15 * time.Millisecond)
-	cb.Allow()
+	_ = cb.Allow()
 
 	assert.Equal(t, "half-open", cb.State())
 	assert.ErrorIs(t, cb.Allow(), circuitbreaker.ErrOpen)
