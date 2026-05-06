@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -23,17 +22,15 @@ var testIntervals = Intervals{
 	LogBatchTimeout:   1 * time.Second,
 }
 
-// fakeOTLP returns an httptest.Server that accepts OTLP HTTP exports without
-// inspecting them. Setup needs a reachable host:port even if no batches flush.
+// fakeOTLP returns an httptest.Server that accepts OTLP/HTTP exports without
+// inspecting them. Returns the full http://host:port URL.
 func fakeOTLP(t *testing.T) string {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(srv.Close)
-	u, err := url.Parse(srv.URL)
-	require.NoError(t, err)
-	return u.Host
+	return srv.URL
 }
 
 func newTestSDK(t *testing.T) *SDK {

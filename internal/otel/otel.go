@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
@@ -36,9 +37,10 @@ type Intervals struct {
 	LogBatchTimeout   time.Duration
 }
 
-// Setup initializes OTel with OTLP HTTP exporters for traces, metrics, and logs.
-// It registers global TracerProvider, MeterProvider, and TextMapPropagator so
-// that library code (e.g. proxy.injectTraceContext) can use otel.GetTextMapPropagator().
+// Setup initializes OTel with OTLP/HTTP exporters for traces, metrics, and logs.
+// The endpoint must be a full URL. Scheme selects transport security
+// (http for plaintext, https for TLS). Registers global TracerProvider,
+// MeterProvider, and TextMapPropagator for library code to use.
 func Setup(ctx context.Context, endpoint string, iv Intervals) (*SDK, error) {
 	res, err := resource.Merge(
 		resource.Default(),
@@ -51,10 +53,11 @@ func Setup(ctx context.Context, endpoint string, iv Intervals) (*SDK, error) {
 		return nil, err
 	}
 
+	base := strings.TrimRight(endpoint, "/")
+
 	traceExp, err := otlptracehttp.New(
 		ctx,
-		otlptracehttp.WithEndpoint(endpoint),
-		otlptracehttp.WithInsecure(),
+		otlptracehttp.WithEndpointURL(base+"/v1/traces"),
 	)
 	if err != nil {
 		return nil, err
@@ -67,8 +70,7 @@ func Setup(ctx context.Context, endpoint string, iv Intervals) (*SDK, error) {
 
 	metricExp, err := otlpmetrichttp.New(
 		ctx,
-		otlpmetrichttp.WithEndpoint(endpoint),
-		otlpmetrichttp.WithInsecure(),
+		otlpmetrichttp.WithEndpointURL(base+"/v1/metrics"),
 	)
 	if err != nil {
 		_ = tp.Shutdown(ctx)
@@ -84,8 +86,7 @@ func Setup(ctx context.Context, endpoint string, iv Intervals) (*SDK, error) {
 
 	logExp, err := otlploghttp.New(
 		ctx,
-		otlploghttp.WithEndpoint(endpoint),
-		otlploghttp.WithInsecure(),
+		otlploghttp.WithEndpointURL(base+"/v1/logs"),
 	)
 	if err != nil {
 		_ = tp.Shutdown(ctx)
