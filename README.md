@@ -1,5 +1,10 @@
 # Go API Gateway
 
+[![ci](https://github.com/quantum-entangled/go-api-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/quantum-entangled/go-api-gateway/actions/workflows/ci.yml)
+[![go report card](https://goreportcard.com/badge/github.com/quantum-entangled/go-api-gateway)](https://goreportcard.com/report/github.com/quantum-entangled/go-api-gateway)
+[![release](https://img.shields.io/github/v/release/quantum-entangled/go-api-gateway?label=release)](https://github.com/quantum-entangled/go-api-gateway/releases)
+[![go version](https://img.shields.io/github/go-mod/go-version/quantum-entangled/go-api-gateway?label=go)](go.mod)
+
 A self-contained API gateway in Go. It sits in front of HTTP services and handles the things you don't want each service to reimplement: auth checks, rate limiting, caching, compression, load balancing, health checks, circuit breaking, concurrency caps, and request size limits.
 
 ## Features
@@ -15,8 +20,33 @@ A self-contained API gateway in Go. It sits in front of HTTP services and handle
 - Request ID injection and propagation
 - Panic recovery middleware
 - Structured logging via `log/slog`
-- OpenTelemetry traces, metrics, and logs over OTLP HTTP
+- OpenTelemetry traces, metrics, and logs over OTLP/HTTP
 - Graceful shutdown on SIGTERM/SIGINT
+
+## How to use
+
+Two ways, both need Docker.
+
+To try it end-to-end with dummy upstream services, see [Example stack](#example-stack).
+
+To drop it in front of your own services, pull the image:
+
+```
+docker pull ghcr.io/quantum-entangled/go-api-gateway:latest
+```
+
+Then run it, mounting your config (and the JWT public key, if any service uses auth):
+
+```
+docker run --rm -p 8080:8080 \
+  -v $(pwd)/gateway.yaml:/etc/gateway/gateway.yaml:ro \
+  -v $(pwd)/jwt.pem:/etc/gateway/jwt.pem:ro \
+  -e JWT_PUBLIC_KEY_PATH=/etc/gateway/jwt.pem \
+  ghcr.io/quantum-entangled/go-api-gateway:latest \
+  -config /etc/gateway/gateway.yaml
+```
+
+The image is small and distroless. See [Configuration](#configuration) for `gateway.yaml` and env vars.
 
 ## Configuration
 
@@ -26,6 +56,8 @@ Two layers:
 - Env vars: infra secrets and the OTel endpoint.
 
 If a feature key is omitted, the feature is off. So a minimal config is one service entry with `name`, `prefix`, and `upstreams`. Anything else has a sensible default.
+
+The gateway listens plaintext HTTP. Terminate TLS upstream of it. Outbound to upstreams and OTel can use HTTPS.
 
 ### YAML (gateway.yaml)
 
@@ -47,6 +79,7 @@ If a feature key is omitted, the feature is off. So a minimal config is one serv
 | `rate_limit.redis.dial_timeout` | duration | no | go-redis default | TCP dial timeout. |
 | `rate_limit.redis.read_timeout` | duration | no | go-redis default | Read timeout. |
 | `rate_limit.redis.write_timeout` | duration | no | go-redis default | Write timeout. |
+| `rate_limit.redis.tls` | bool | no | `false` | Connect to Redis over TLS 1.2+. |
 | `health_check.interval` | duration | no | `5s` | How often each upstream is probed. |
 | `health_check.path` | string | no | `/healthz` | Probe path. |
 | `circuit_breaker.max_failures` | int | yes if block set | - | Consecutive failures that trip the breaker. |
@@ -74,7 +107,7 @@ If a feature key is omitted, the feature is off. So a minimal config is one serv
 |---|---|---|
 | `JWT_PUBLIC_KEY_PATH` | yes if any service has `auth: true` | Path to the RSA public key in PEM/PKIX. |
 | `REDIS_PASSWORD` | yes if `rate_limit.backend: redis` | Forwarded to the Redis client. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | OTLP HTTP endpoint, e.g. `otel-lgtm:4318`. Empty disables OTel. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | OTLP endpoint URL, e.g. `http(s)://otel-lgtm:4318`. Empty disables OTel. |
 
 ## Example stack
 
@@ -101,6 +134,9 @@ JWT verification needs an RSA keypair. The gateway loads `example.pem` (public).
 
 ```
 make infra-up
+```
+
+```
 make infra-down
 ```
 
@@ -108,6 +144,9 @@ The gateway is at `http://localhost:${GATEWAY_PORT}`. Sanity check:
 
 ```
 curl http://localhost:8080/catalog/products
+```
+
+```
 TOKEN=$(go run ./loadtest/cmd/gentoken -key example.key)
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/orders/orders
 ```
@@ -117,7 +156,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/orders/orders
 - Grafana: `http://localhost:${GRAFANA_PORT}`, login `admin` / `admin`.
 - Default home dashboard: `grafana/dashboards/gateway-overview.json` (provisioned at boot). Covers traffic, latency, resource use, and per-upstream health, with logs and traces linked.
 - OTLP receivers: `${OTEL_GRPC_PORT}` (4317), `${OTEL_HTTP_PORT}` (4318). The gateway uses HTTP.
-- Different backend? Point `OTEL_EXPORTER_OTLP_ENDPOINT` at its OTLP HTTP receiver.
+- Different backend? Point `OTEL_EXPORTER_OTLP_ENDPOINT` at its OTLP/HTTP URL.
 
 ## Load testing
 
