@@ -1,8 +1,8 @@
 # Go API Gateway
 
-[![ci](https://github.com/quantum-entangled/go-api-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/quantum-entangled/go-api-gateway/actions/workflows/ci.yml)
+[![ci](https://img.shields.io/github/actions/workflow/status/quantum-entangled/go-api-gateway/ci.yaml?branch=main&label=ci&logo=github)](https://github.com/quantum-entangled/go-api-gateway/actions/workflows/ci.yaml)
+[![release](https://img.shields.io/github/v/release/quantum-entangled/go-api-gateway?label=release&logo=github)](https://github.com/quantum-entangled/go-api-gateway/releases)
 [![go report card](https://goreportcard.com/badge/github.com/quantum-entangled/go-api-gateway)](https://goreportcard.com/report/github.com/quantum-entangled/go-api-gateway)
-[![release](https://img.shields.io/github/v/release/quantum-entangled/go-api-gateway?label=release)](https://github.com/quantum-entangled/go-api-gateway/releases)
 [![go version](https://img.shields.io/github/go-mod/go-version/quantum-entangled/go-api-gateway?label=go)](go.mod)
 
 A self-contained API gateway in Go. It sits in front of HTTP services and handles the things you don't want each service to reimplement: auth checks, rate limiting, caching, compression, load balancing, health checks, circuit breaking, concurrency caps, and request size limits.
