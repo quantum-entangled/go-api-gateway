@@ -51,15 +51,20 @@ jobs:
 
       - name: Smoke test the prod image
         run: |
+          docker network create smoke-net
+          docker run -d --name smoke-upstream --network smoke-net nginx:alpine
           cat > smoke.yaml <<'EOF'
           port: 8080
           services:
             - name: example
               prefix: /example
               upstreams:
-                - http://127.0.0.1:9
+                - http://smoke-upstream:80
+          health_check:
+            interval: 1s
+            path: /
           EOF
-          docker run -d --name gateway-smoke \
+          docker run -d --name gateway-smoke --network smoke-net \
             -p 8080:8080 \
             -v "$(pwd)/smoke.yaml:/etc/gateway/gateway.yaml:ro" \
             gateway:smoke -config /etc/gateway/gateway.yaml
@@ -67,14 +72,17 @@ jobs:
             if curl -sf http://localhost:8080/healthz; then
               echo "healthz OK"
               docker logs gateway-smoke
-              docker rm -f gateway-smoke
+              docker rm -f gateway-smoke smoke-upstream
+              docker network rm smoke-net
               exit 0
             fi
             sleep 1
           done
           echo "healthz never came up"
           docker logs gateway-smoke
-          docker rm -f gateway-smoke
+          docker logs smoke-upstream
+          docker rm -f gateway-smoke smoke-upstream
+          docker network rm smoke-net
           exit 1
 
       - name: Build and push multi-arch prod image
