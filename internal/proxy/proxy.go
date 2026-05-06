@@ -91,8 +91,7 @@ func NewHandler(lb LoadBalancer, breakers map[string]*circuitbreaker.Breaker, tc
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			var maxBytesErr *http.MaxBytesError
-			if errors.As(err, &maxBytesErr) {
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 				jsonError(w, http.StatusRequestEntityTooLarge, map[string]string{
 					"error": "request body too large",
 				})
@@ -178,8 +177,7 @@ func classifyProxyError(err error) (int, string) {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return http.StatusGatewayTimeout, "upstream timeout"
 	}
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
+	if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
 		return http.StatusGatewayTimeout, "upstream timeout"
 	}
 	return http.StatusBadGateway, "upstream unavailable"

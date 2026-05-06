@@ -77,6 +77,6 @@ func TestMaxBody_ChunkedOverLimit(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	require.Error(t, readErr)
-	var maxBytesErr *http.MaxBytesError
-	assert.True(t, errors.As(readErr, &maxBytesErr), "expected *http.MaxBytesError, got %T", readErr)
+	_, ok := errors.AsType[*http.MaxBytesError](readErr)
+	assert.True(t, ok, "expected *http.MaxBytesError, got %T", readErr)
 }

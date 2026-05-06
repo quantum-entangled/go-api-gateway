@@ -96,8 +96,7 @@ func main() {
 		}
 
 		if err := validate.Struct(payload); err != nil {
-			var ve validator.ValidationErrors
-			if errors.As(err, &ve) {
+			if ve, ok := errors.AsType[validator.ValidationErrors](err); ok {
 				logger.Error("validation failed", "field", ve[0].Field(), "tag", ve[0].Tag())
 				writeJSON(w, http.StatusBadRequest, map[string]string{
 					"error": fmt.Sprintf("invalid field %s: %s", ve[0].Field(), ve[0].Tag()),
