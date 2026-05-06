@@ -3,17 +3,12 @@ package main
 import (
 	"compress/gzip"
 	"context"
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -138,18 +133,4 @@ func signE2EToken(t *testing.T, key *rsa.PrivateKey) string {
 	s, err := tok.SignedString(key)
 	require.NoError(t, err)
 	return s
-}
-
-func writeTestKeypair(t *testing.T) (*rsa.PrivateKey, string) {
-	t.Helper()
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-
-	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
-	require.NoError(t, err)
-	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
-
-	path := filepath.Join(t.TempDir(), "jwt_pub.pem")
-	require.NoError(t, os.WriteFile(path, pemBytes, 0o600))
-	return priv, path
 }

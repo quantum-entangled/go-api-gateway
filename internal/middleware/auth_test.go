@@ -27,15 +27,6 @@ func init() {
 	}
 }
 
-// signToken is a test helper that creates a signed JWT with the given claims.
-func signToken(t *testing.T, claims jwt.MapClaims) string {
-	t.Helper()
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	s, err := token.SignedString(testKey)
-	require.NoError(t, err)
-	return s
-}
-
 func TestJWTAuth_RejectsHS256(t *testing.T) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub":   "attacker",

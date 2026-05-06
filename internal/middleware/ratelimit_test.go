@@ -86,9 +86,10 @@ func TestKeyByJWTSub_ReturnsSubjectWhenClaimsPresent(t *testing.T) {
 	})
 	handler := middleware.JWTAuth(&testKey.PublicKey)(inner)
 
+	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tokenStr)
-	handler.ServeHTTP(httptest.NewRecorder(), req)
+	handler.ServeHTTP(rec, req)
 
 	assert.Equal(t, "user1", key)
 }
